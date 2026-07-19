@@ -9,6 +9,10 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import Markdown from 'react-markdown';
 
+import { EvolutionChart } from '@/components/evolution-chart';
+
+import { DailyNutritionTip } from '@/components/daily-nutrition-tip';
+
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
   const [creativePlan, setCreativePlan] = useState('');
@@ -106,6 +110,8 @@ export default function PatientDashboard() {
         </Card>
 
         <div className="space-y-6">
+          <DailyNutritionTip objective={patientData.objective} />
+          
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center text-base">
@@ -140,6 +146,10 @@ export default function PatientDashboard() {
             </CardContent>
           </Card>
         </div>
+      </div>
+      
+      <div className="mt-6">
+        <EvolutionChart />
       </div>
     </div>
   );
