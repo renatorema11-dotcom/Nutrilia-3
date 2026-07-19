@@ -1,0 +1,6 @@
+{
+  "name": "NutriConnect",
+  "description": "Plataforma de conexão entre nutricionistas e pacientes, com acompanhamento de planos e IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
