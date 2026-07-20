@@ -4,8 +4,9 @@ import { MOCK_PATIENT } from '@/lib/mock-data';
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Calendar, MessageSquare, Apple, Sparkles, Loader2, Download, Settings, Activity } from 'lucide-react';
+import { Calendar, MessageSquare, Apple, Sparkles, Loader2, Download, Settings, Activity, Save } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import Markdown from 'react-markdown';
 import { useReactToPrint } from 'react-to-print';
@@ -13,13 +14,17 @@ import { useReactToPrint } from 'react-to-print';
 import { EvolutionChart } from '@/components/evolution-chart';
 import { DailyNutritionTip } from '@/components/daily-nutrition-tip';
 import { PatientSettings } from '@/components/patient-settings';
+import { GuidedTour } from '@/components/guided-tour';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
   const [creativePlan, setCreativePlan] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
+  const [observations, setObservations] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
@@ -50,7 +55,7 @@ export default function PatientDashboard() {
       const res = await fetch('/api/gemini/generate-creative-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patientData)
+        body: JSON.stringify({ ...patientData, observations })
       });
       const data = await res.json();
       if (data.text) {
@@ -60,6 +65,31 @@ export default function PatientDashboard() {
       console.error(error);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const savePlan = () => {
+    setIsSaving(true);
+    try {
+      const savedPlansStr = localStorage.getItem('mockSavedPlans');
+      const savedPlans = savedPlansStr ? JSON.parse(savedPlansStr) : [];
+      
+      const newPlan = {
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+        content: creativePlan,
+        objective: patientData.objective
+      };
+      
+      savedPlans.unshift(newPlan);
+      localStorage.setItem('mockSavedPlans', JSON.stringify(savedPlans));
+      
+      // Redirect to Meu Plano
+      router.push('/patient/plan');
+    } catch (error) {
+      console.error("Error saving plan:", error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -81,10 +111,24 @@ export default function PatientDashboard() {
             </p>
             
             {!creativePlan && !isGenerating && (
-              <Button onClick={generateCreativePlan} className="bg-teal-600 hover:bg-teal-700 text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
-                Gerar Cardápio Criativo
-              </Button>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="observations" className="block text-sm font-medium text-slate-700 mb-1">
+                    Observações e Preferências
+                  </label>
+                  <textarea
+                    id="observations"
+                    value={observations}
+                    onChange={(e) => setObservations(e.target.value)}
+                    placeholder="Ex: Não gosto de peixe, quero algo prático para levar pro trabalho..."
+                    className="w-full rounded-lg bg-white/80 border border-white/50 px-3 py-2 text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm transition-shadow min-h-[80px]"
+                  />
+                </div>
+                <Button onClick={generateCreativePlan} className="bg-teal-600 hover:bg-teal-700 text-white flex items-center gap-2 w-full sm:w-auto">
+                  <Sparkles className="w-4 h-4" />
+                  Gerar Cardápio Criativo
+                </Button>
+              </div>
             )}
 
             {isGenerating && (
@@ -99,13 +143,17 @@ export default function PatientDashboard() {
                 <div ref={printRef} className="markdown-body text-sm text-slate-700 space-y-4 p-4">
                   <Markdown>{creativePlan}</Markdown>
                 </div>
-                <div className="flex gap-4 mt-4">
+                <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                  <Button onClick={savePlan} disabled={isSaving} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
+                    {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                    Salvar Plano
+                  </Button>
                   <Button onClick={() => handlePrint()} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
                     <Download className="w-4 h-4 mr-2" />
                     Exportar PDF
                   </Button>
-                  <Button onClick={generateCreativePlan} variant="outline" className="flex-1 text-xs h-9">
-                    Gerar outra opção
+                  <Button onClick={() => setCreativePlan('')} variant="outline" className="flex-1 text-xs h-9">
+                    Gerar nova opção
                   </Button>
                 </div>
               </div>
@@ -160,6 +208,7 @@ export default function PatientDashboard() {
 
   return (
     <div className="space-y-6">
+      <GuidedTour />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold text-slate-800">Olá, {patientData.name.split(' ')[0]}</h1>
