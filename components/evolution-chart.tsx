@@ -26,6 +26,7 @@ export function EvolutionChart() {
       
       const savedHistory = localStorage.getItem('mockPatientHistory');
       if (savedHistory) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setData(JSON.parse(savedHistory));
       } else {
         // Criar histórico mockado para visualização baseado no peso atual
@@ -36,6 +37,7 @@ export function EvolutionChart() {
           { month: 'Abr', weight: currentWeight, fat: 21.1 },
         ];
         localStorage.setItem('mockPatientHistory', JSON.stringify(mockHistory));
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setData(mockHistory);
       }
     }

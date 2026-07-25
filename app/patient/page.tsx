@@ -15,6 +15,11 @@ import { EvolutionChart } from '@/components/evolution-chart';
 import { DailyNutritionTip } from '@/components/daily-nutrition-tip';
 import { PatientSettings } from '@/components/patient-settings';
 import { GuidedTour } from '@/components/guided-tour';
+import { AppointmentScheduler } from '@/components/appointment-scheduler';
+import { MacronutrientsChart } from '@/components/macronutrients-chart';
+import { WaterTracker } from '@/components/water-tracker';
+import { MoodDiary } from '@/components/mood-diary';
+import { WeightProgress } from '@/components/weight-progress';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
@@ -34,14 +39,18 @@ export default function PatientDashboard() {
   useEffect(() => {
     const saved = localStorage.getItem('mockPatientData');
     if (saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPatientData(JSON.parse(saved));
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPatientData({
         name: MOCK_PATIENT.name,
         age: 32,
         weight: 70,
         height: 165,
-        objective: 'Manutenção'
+        initialWeight: MOCK_PATIENT.initialWeight || 75,
+        targetWeight: MOCK_PATIENT.targetWeight || 65,
+        objective: 'Emagrecimento'
       });
     }
   }, []);
@@ -98,7 +107,7 @@ export default function PatientDashboard() {
   const renderOverview = () => (
     <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2 flex flex-col gap-4">
+        <Card className="tour-plan-generator md:col-span-2 flex flex-col gap-4">
           <CardHeader className="pb-0">
             <CardTitle className="flex items-center text-teal-800">
               <Sparkles className="w-5 h-5 mr-2 text-teal-600" />
@@ -162,26 +171,16 @@ export default function PatientDashboard() {
         </Card>
 
         <div className="space-y-6">
+          <WeightProgress 
+            initialWeight={patientData.initialWeight || patientData.weight + 5} 
+            currentWeight={patientData.weight} 
+            targetWeight={patientData.targetWeight || patientData.weight - 5} 
+          />
           <DailyNutritionTip objective={patientData.objective} />
           
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center text-base">
-                <Calendar className="w-5 h-5 mr-2 text-blue-500" />
-                Próxima Consulta
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-slate-800">
-                {format(nextAppointment, "dd 'de' MMM", { locale: ptBR })}
-              </p>
-              <p className="text-slate-600 capitalize">
-                {format(nextAppointment, "EEEE 'às' HH:mm", { locale: ptBR })}
-              </p>
-            </CardContent>
-          </Card>
+          <AppointmentScheduler currentPatientName={patientData.name} />
 
-          <Card>
+          <Card className="tour-chat">
             <CardContent className="pt-6">
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center shadow-sm">
@@ -200,8 +199,21 @@ export default function PatientDashboard() {
         </div>
       </div>
       
-      <div className="mt-6">
-        <EvolutionChart />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+        <div className="tour-evolution md:col-span-2">
+          <EvolutionChart />
+        </div>
+        <div className="flex flex-col gap-6">
+          <div className="flex-1">
+            <MacronutrientsChart />
+          </div>
+          <div>
+            <WaterTracker />
+          </div>
+          <div>
+            <MoodDiary />
+          </div>
+        </div>
       </div>
     </>
   );

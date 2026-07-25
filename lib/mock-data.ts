@@ -3,6 +3,8 @@ export const MOCK_PATIENT = {
   name: 'João Silva',
   email: 'joao@example.com',
   age: 32,
+  targetWeight: 75,
+  initialWeight: 85,
   nextAppointment: '2026-08-15T10:00:00Z',
   measurements: [
     { date: '2026-04-10', weight: 85, bodyFat: 22, height: 180 },

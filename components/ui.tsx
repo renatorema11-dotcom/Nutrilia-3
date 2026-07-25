@@ -91,14 +91,14 @@ export function Input({
   );
 }
 
-export function Badge({ children, variant = 'default' }: { children: React.ReactNode, variant?: 'default' | 'success' | 'warning' }) {
+export function Badge({ children, variant = 'default', className = '' }: { children: React.ReactNode, variant?: 'default' | 'success' | 'warning', className?: string }) {
   const variants = {
     default: "bg-white/40 border border-white/50 text-slate-700",
     success: "bg-teal-100 border border-teal-200 text-teal-800",
     warning: "bg-amber-100 border border-amber-200 text-amber-800"
   };
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium shadow-sm ${variants[variant]}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium shadow-sm ${variants[variant]} ${className}`}>
       {children}
     </span>
   );

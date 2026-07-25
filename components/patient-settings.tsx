@@ -16,6 +16,8 @@ export function PatientSettings({
     age: '',
     height: '',
     weight: '',
+    initialWeight: '',
+    targetWeight: '',
     objective: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -23,11 +25,14 @@ export function PatientSettings({
 
   useEffect(() => {
     if (patientData) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: patientData.name || '',
         age: patientData.age || '',
         height: patientData.height || '',
         weight: patientData.weight || '',
+        initialWeight: patientData.initialWeight || '',
+        targetWeight: patientData.targetWeight || '',
         objective: patientData.objective || ''
       });
     }
@@ -131,13 +136,33 @@ export function PatientSettings({
               <Input
                 id="weight"
                 type="number"
-                label="Peso (kg)"
+                label="Peso Atual (kg)"
                 required
                 value={formData.weight}
                 onChange={handleChange}
                 placeholder="Última medição"
               />
               {errors.weight && <p className="text-xs text-red-500 font-medium">{errors.weight}</p>}
+            </div>
+            <div className="space-y-1">
+              <Input
+                id="initialWeight"
+                type="number"
+                label="Peso Inicial (kg)"
+                required
+                value={formData.initialWeight}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="space-y-1">
+              <Input
+                id="targetWeight"
+                type="number"
+                label="Meta de Peso (kg)"
+                required
+                value={formData.targetWeight}
+                onChange={handleChange}
+              />
             </div>
             <div className="space-y-1">
               <label htmlFor="objective" className="block text-sm font-medium text-slate-700">

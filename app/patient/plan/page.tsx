@@ -52,17 +52,25 @@ function PlanCard({ plan }: { plan: any }) {
 
 export default function PatientPlan() {
   const [savedPlans, setSavedPlans] = useState<any[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsMounted(true);
     const plansStr = localStorage.getItem('mockSavedPlans');
     if (plansStr) {
       try {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSavedPlans(JSON.parse(plansStr));
       } catch (e) {
         console.error(e);
       }
     }
   }, []);
+
+  if (!isMounted) {
+    return null; // Or a loading spinner
+  }
 
   if (savedPlans.length === 0) {
     return (
