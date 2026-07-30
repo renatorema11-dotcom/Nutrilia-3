@@ -11,23 +11,27 @@ interface WeightProgressProps {
 }
 
 export function WeightProgress({ initialWeight, currentWeight, targetWeight }: WeightProgressProps) {
-  const isLosingWeight = targetWeight < initialWeight;
+  const initial = Number(initialWeight) || 0;
+  const current = Number(currentWeight) || 0;
+  const target = Number(targetWeight) || 0;
+
+  const isLosingWeight = target < initial;
   
   // Calculate progress percentage
   // If losing weight: 100% means we reached or surpassed the target (went lower).
   // If gaining weight: 100% means we reached or surpassed the target (went higher).
-  const totalDifference = Math.abs(initialWeight - targetWeight);
-  const currentDifference = Math.abs(initialWeight - currentWeight);
+  const totalDifference = Math.abs(initial - target);
+  const currentDifference = Math.abs(initial - current);
   
-  let percentage = (currentDifference / totalDifference) * 100;
+  let percentage = totalDifference > 0 ? (currentDifference / totalDifference) * 100 : 0;
   
   // Cap at 100% and ensure it doesn't go below 0%
-  if (isLosingWeight && currentWeight > initialWeight) percentage = 0;
-  if (!isLosingWeight && currentWeight < initialWeight) percentage = 0;
+  if (isLosingWeight && current > initial) percentage = 0;
+  if (!isLosingWeight && current < initial) percentage = 0;
   
   percentage = Math.min(Math.max(percentage, 0), 100);
 
-  const remaining = Math.abs(currentWeight - targetWeight);
+  const remaining = Math.abs(current - target);
 
   return (
     <Card className="h-full">
@@ -42,7 +46,7 @@ export function WeightProgress({ initialWeight, currentWeight, targetWeight }: W
           <div className="flex justify-between items-end">
             <div>
               <p className="text-3xl font-bold text-slate-800">
-                {currentWeight.toFixed(1)} <span className="text-sm font-normal text-slate-500">kg</span>
+                {current.toFixed(1)} <span className="text-sm font-normal text-slate-500">kg</span>
               </p>
               <p className="text-sm text-slate-500 flex items-center mt-1">
                 {isLosingWeight ? (
@@ -55,13 +59,13 @@ export function WeightProgress({ initialWeight, currentWeight, targetWeight }: W
             </div>
             <div className="text-right">
               <p className="text-sm font-medium text-indigo-600">Alvo</p>
-              <p className="text-xl font-semibold text-slate-800">{targetWeight.toFixed(1)} kg</p>
+              <p className="text-xl font-semibold text-slate-800">{target.toFixed(1)} kg</p>
             </div>
           </div>
 
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-500 font-medium">
-              <span>{initialWeight} kg</span>
+              <span>{initial} kg</span>
               <span>{Math.round(percentage)}%</span>
             </div>
             <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden relative">

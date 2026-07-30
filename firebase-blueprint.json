@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profile information",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "plans": {
+      "title": "Plans",
+      "description": "Saved meal plans",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "objective": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string" }
+      }
+    }
+  }
+}

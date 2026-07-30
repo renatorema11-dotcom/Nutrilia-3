@@ -4,7 +4,7 @@ import { MOCK_PATIENT } from '@/lib/mock-data';
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Calendar, MessageSquare, Apple, Sparkles, Loader2, Download, Settings, Activity, Save } from 'lucide-react';
+import { Calendar, MessageSquare, Apple, Sparkles, Loader2, Download, Settings, Activity, Save, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
@@ -20,6 +20,8 @@ import { MacronutrientsChart } from '@/components/macronutrients-chart';
 import { WaterTracker } from '@/components/water-tracker';
 import { MoodDiary } from '@/components/mood-diary';
 import { WeightProgress } from '@/components/weight-progress';
+import { FoodDiary } from '@/components/food-diary';
+import { Achievements } from '@/components/achievements';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
@@ -28,6 +30,7 @@ export default function PatientDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
   const [observations, setObservations] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [hasPlan, setHasPlan] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -37,6 +40,22 @@ export default function PatientDashboard() {
   });
 
   useEffect(() => {
+    const isValidPlanFormat = (data: string) => {
+      try {
+        const parsed = JSON.parse(data);
+        if (!Array.isArray(parsed)) return false;
+        return parsed.every(plan => plan && typeof plan === 'object' && 'id' in plan);
+      } catch {
+        return false;
+      }
+    };
+
+    const savedPlans = localStorage.getItem('mockSavedPlans');
+    if (savedPlans && isValidPlanFormat(savedPlans) && JSON.parse(savedPlans).length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHasPlan(true);
+    }
+
     const saved = localStorage.getItem('mockPatientData');
     if (saved) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -199,22 +218,38 @@ export default function PatientDashboard() {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-        <div className="tour-evolution md:col-span-2">
-          <EvolutionChart />
+      {hasPlan ? (
+        <div className="flex flex-col gap-6 mt-6">
+          <div className="w-full">
+            <Achievements />
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="tour-evolution lg:col-span-2">
+              <EvolutionChart />
+            </div>
+            <div className="lg:col-span-1 h-full">
+              <MacronutrientsChart />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <FoodDiary />
+            </div>
+            <div className="lg:col-span-1 flex flex-col gap-6">
+              <WaterTracker />
+              <MoodDiary />
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-6">
-          <div className="flex-1">
-            <MacronutrientsChart />
-          </div>
-          <div>
-            <WaterTracker />
-          </div>
-          <div>
-            <MoodDiary />
-          </div>
+      ) : (
+        <div className="mt-6 border border-slate-200 border-dashed rounded-xl p-12 flex flex-col items-center justify-center text-center bg-white/50">
+          <FileText className="w-12 h-12 text-slate-300 mb-4" />
+          <h3 className="text-lg font-medium text-slate-800">Nenhum plano alimentar ativo</h3>
+          <p className="text-slate-600 mt-2 max-w-md">Para visualizar seu diário de refeições, metas e evolução, gere um novo plano criativo com IA e salve-o em seus planos.</p>
         </div>
-      </div>
+      )}
     </>
   );
 

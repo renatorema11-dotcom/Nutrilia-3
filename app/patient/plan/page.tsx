@@ -41,7 +41,7 @@ function PlanCard({ plan }: { plan: any }) {
       <CardContent className="pt-6">
         <div 
           ref={contentRef} 
-          className="markdown-body text-sm text-slate-800 p-2"
+          className="prose prose-teal max-w-none prose-sm sm:prose-base prose-headings:font-bold prose-h1:text-teal-900 prose-h1:text-2xl prose-h1:border-b prose-h1:pb-2 prose-h2:text-teal-800 prose-h2:text-xl prose-h3:text-teal-700 prose-h4:text-teal-600 prose-p:text-slate-700 prose-li:text-slate-700 prose-strong:text-teal-900 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 bg-white rounded-xl shadow-sm border border-slate-100 p-6 sm:p-8"
         >
           <Markdown>{plan.content}</Markdown>
         </div>
@@ -57,13 +57,24 @@ export default function PatientPlan() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
+
+    const isValidPlanFormat = (data: string) => {
+      try {
+        const parsed = JSON.parse(data);
+        if (!Array.isArray(parsed)) return false;
+        return parsed.every(plan => plan && typeof plan === 'object' && 'id' in plan);
+      } catch {
+        return false;
+      }
+    };
+
     const plansStr = localStorage.getItem('mockSavedPlans');
     if (plansStr) {
-      try {
+      if (isValidPlanFormat(plansStr)) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSavedPlans(JSON.parse(plansStr));
-      } catch (e) {
-        console.error(e);
+      } else {
+        console.error('Invalid saved plans format in localStorage');
       }
     }
   }, []);

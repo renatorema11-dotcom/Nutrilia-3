@@ -5,6 +5,7 @@ export const MOCK_PATIENT = {
   age: 32,
   targetWeight: 75,
   initialWeight: 85,
+  objective: 'Emagrecimento',
   nextAppointment: '2026-08-15T10:00:00Z',
   measurements: [
     { date: '2026-04-10', weight: 85, bodyFat: 22, height: 180 },
@@ -53,6 +54,9 @@ export const MOCK_PATIENTS_LIST = [
     name: 'Maria Souza',
     email: 'maria@example.com',
     age: 28,
+    targetWeight: 60,
+    initialWeight: 65,
+    objective: 'Reeducação Alimentar',
     nextAppointment: '2026-07-20T14:00:00Z',
     measurements: [{ date: '2026-06-15', weight: 65, bodyFat: 25, height: 165 }],
     currentPlan: null, // Need to generate plan
@@ -63,6 +67,9 @@ export const MOCK_PATIENTS_LIST = [
     name: 'Carlos Oliveira',
     email: 'carlos@example.com',
     age: 45,
+    targetWeight: 85,
+    initialWeight: 95,
+    objective: 'Emagrecimento',
     nextAppointment: '2026-07-25T09:00:00Z',
     measurements: [{ date: '2026-05-10', weight: 95, bodyFat: 28, height: 175 }],
     currentPlan: { id: 'plan_p3', status: 'draft', createdDate: '2026-07-15' }, // Waiting approval
