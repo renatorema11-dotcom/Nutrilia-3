@@ -10,17 +10,22 @@ import Link from 'next/link';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-  const { role, login, loginWithGoogle } = useAuth();
+  const { role, login, loginWithGoogle, loginWithEmail } = useAuth();
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock authentication check based on email keyword just for testing
-    if (email.includes('ana')) {
-      login('nutritionist');
-    } else {
-      login('patient');
+    setIsLoading(true);
+    
+    try {
+      await loginWithEmail(email, password);
+    } catch (error) {
+      console.error('Login error:', error);
+      alert('Email ou senha inválidos.');
+    } finally {
+      setIsLoading(false);
     }
   };
 

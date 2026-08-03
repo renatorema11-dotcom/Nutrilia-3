@@ -14,15 +14,23 @@ export default function Register() {
   const [crn, setCrn] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [phone, setPhone] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, registerWithEmail } = useAuth();
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.removeItem('mockPatientData');
-    localStorage.removeItem('mockSavedPlans');
-    localStorage.removeItem('mockFoodDiary');
-    login(role, true);
+    setIsLoading(true);
+    
+    try {
+      const extraData = role === 'nutritionist' ? { crn, specialty, phone } : {};
+      await registerWithEmail(email, password, name, role, extraData);
+    } catch (error) {
+      console.error('Registration error:', error);
+      alert('Erro ao criar conta. Verifique seus dados.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleSignUp = async () => {

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User, db } from '@/lib/firebase';
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User, db, createUserWithEmailAndPassword, signInWithEmailAndPassword } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export type UserRole = 'patient' | 'nutritionist' | null;
@@ -12,6 +12,8 @@ interface AuthContextType {
   user: User | null;
   login: (role: UserRole, isNewUser?: boolean) => void;
   loginWithGoogle: (preferredRole?: UserRole) => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  registerWithEmail: (email: string, password: string, name: string, role: UserRole, extraData?: any) => Promise<void>;
   logout: () => void;
 }
 
@@ -107,6 +109,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithEmail = async (email: string, password: string) => {
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      const userRef = doc(db, 'users', result.user.uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        const userRole = data.role as UserRole;
+        setRole(userRole);
+        if (userRole) {
+          localStorage.setItem('mockRole', userRole);
+          router.push(`/${userRole}`);
+        }
+      } else {
+        throw new Error('User data not found');
+      }
+    } catch (error) {
+      console.error('Email login failed:', error);
+      throw error;
+    }
+  };
+
+  const registerWithEmail = async (email: string, password: string, name: string, role: UserRole, extraData?: any) => {
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const userRef = doc(db, 'users', result.user.uid);
+      await setDoc(userRef, {
+        id: result.user.uid,
+        email,
+        displayName: name,
+        role,
+        ...extraData,
+        createdAt: new Date().toISOString()
+      });
+      setRole(role);
+      if (role) {
+        localStorage.setItem('mockRole', role);
+        if (role === 'patient') {
+          router.push('/onboarding');
+        } else {
+          router.push(`/${role}`);
+        }
+      }
+    } catch (error) {
+      console.error('Email registration failed:', error);
+      throw error;
+    }
+  };
+
   const logout = () => {
     signOut(auth).catch((err) => console.error('Sign out error:', err));
     setUser(null);
@@ -119,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ role, user, login, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ role, user, login, loginWithGoogle, loginWithEmail, registerWithEmail, logout }}>
       {children}
     </AuthContext.Provider>
   );
