@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@theme {
+  --color-teal-50: #f2f7f4;
+  --color-teal-100: #e0eee6;
+  --color-teal-200: #c2dfd1;
+  --color-teal-300: #98c6b3;
+  --color-teal-400: #6ca88f;
+  --color-teal-500: #4c8466;
+  --color-teal-600: #4c8466;
+  --color-teal-700: #276e58;
+  --color-teal-800: #276e58;
+  --color-teal-900: #1c5341;
+}
+
 body {
   background-color: #f0f9ff;
 }

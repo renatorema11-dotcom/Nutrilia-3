@@ -1,20 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-provider';
-import { Card, CardContent, Button, Input } from '@/components/ui';
-import { Leaf } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, Button, Input } from '@/components/ui';
+import { Apple } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-  const { login, loginWithGoogle } = useAuth();
+  const { role, login, loginWithGoogle } = useAuth();
+  const router = useRouter();
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    // Mock authentication check based on email keyword just for testing
     if (email.includes('ana')) {
       login('nutritionist');
     } else {
@@ -25,7 +27,6 @@ export default function Login() {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoadingGoogle(true);
-      // Determine default role based on email if entered, or default to patient
       const preferredRole = email.includes('ana') ? 'nutritionist' : 'patient';
       await loginWithGoogle(preferredRole);
     } catch (error) {
@@ -39,11 +40,11 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-transparent px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8 z-10 relative">
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 bg-teal-600 rounded-xl flex items-center justify-center shadow-lg">
-            <Leaf className="h-6 w-6 text-white" />
+          <div className="mx-auto h-12 w-12 bg-[#4c8466] rounded-xl flex items-center justify-center shadow-lg">
+            <Apple className="h-6 w-6 text-white" />
           </div>
           <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-800">
-            Entrar no NutriConnect
+            Entrar no NutriAli
           </h2>
           <p className="mt-2 text-sm text-slate-600">
             Dica: email contendo &apos;ana&apos; entra como Nutricionista.

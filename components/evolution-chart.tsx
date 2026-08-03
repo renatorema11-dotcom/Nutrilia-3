@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuth } from './auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Activity } from 'lucide-react';
@@ -16,32 +18,51 @@ import {
 
 export function EvolutionChart() {
   const [data, setData] = useState<any[]>([]);
+  const { user } = useAuth();
 
   useEffect(() => {
-    // Pegar o peso atual do onboarding e criar um histórico mockado se não existir
-    const savedData = localStorage.getItem('mockPatientData');
-    if (savedData) {
-      const patient = JSON.parse(savedData);
-      const currentWeight = parseFloat(patient.weight);
-      
-      const savedHistory = localStorage.getItem('mockPatientHistory');
-      if (savedHistory) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setData(JSON.parse(savedHistory));
+    async function loadData() {
+      if (user) {
+        const dbData = await getUserData(user.uid);
+        if (dbData?.patientData) {
+          const currentWeight = parseFloat(dbData.patientData.weight);
+          if (dbData.patientHistory) {
+            setData(dbData.patientHistory);
+          } else {
+            const mockHistory = [
+              { month: 'Jan', weight: currentWeight + 3.2, fat: 24.5 },
+              { month: 'Fev', weight: currentWeight + 2.1, fat: 23.2 },
+              { month: 'Mar', weight: currentWeight + 0.8, fat: 22.0 },
+              { month: 'Abr', weight: currentWeight, fat: 21.1 },
+            ];
+            await updateUserData(user.uid, { patientHistory: mockHistory });
+            setData(mockHistory);
+          }
+        }
       } else {
-        // Criar histórico mockado para visualização baseado no peso atual
-        const mockHistory = [
-          { month: 'Jan', weight: currentWeight + 3.2, fat: 24.5 },
-          { month: 'Fev', weight: currentWeight + 2.1, fat: 23.2 },
-          { month: 'Mar', weight: currentWeight + 0.8, fat: 22.0 },
-          { month: 'Abr', weight: currentWeight, fat: 21.1 },
-        ];
-        localStorage.setItem('mockPatientHistory', JSON.stringify(mockHistory));
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setData(mockHistory);
+        const savedData = localStorage.getItem('mockPatientData');
+        if (savedData) {
+          const patient = JSON.parse(savedData);
+          const currentWeight = parseFloat(patient.weight);
+          
+          const savedHistory = localStorage.getItem('mockPatientHistory');
+          if (savedHistory) {
+            setData(JSON.parse(savedHistory));
+          } else {
+            const mockHistory = [
+              { month: 'Jan', weight: currentWeight + 3.2, fat: 24.5 },
+              { month: 'Fev', weight: currentWeight + 2.1, fat: 23.2 },
+              { month: 'Mar', weight: currentWeight + 0.8, fat: 22.0 },
+              { month: 'Abr', weight: currentWeight, fat: 21.1 },
+            ];
+            localStorage.setItem('mockPatientHistory', JSON.stringify(mockHistory));
+            setData(mockHistory);
+          }
+        }
       }
     }
-  }, []);
+    loadData();
+  }, [user]);
 
   if (data.length === 0) return null;
 

@@ -5,36 +5,59 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Button } from '@/components/ui';
 import { Droplet, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useAuth } from './auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 
 export function WaterTracker() {
   const [water, setWater] = useState(0);
   const [isMounted, setIsMounted] = useState(false);
   const goal = 2000; // 2L
+  const { user } = useAuth();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
-    const saved = localStorage.getItem('mockWaterIntake');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.date === new Date().toLocaleDateString()) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setWater(parsed.amount);
+    async function loadData() {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data?.waterIntake?.date === new Date().toLocaleDateString()) {
+          setWater(data.waterIntake.amount || 0);
+        } else {
+          setWater(0);
         }
-      } catch (e) {
-        console.error(e);
+      } else {
+        const saved = localStorage.getItem('mockWaterIntake');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.date === new Date().toLocaleDateString()) {
+              setWater(parsed.amount);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
       }
     }
-  }, []);
+    loadData();
+  }, [user]);
 
-  const addWater = (amount: number) => {
+  const addWater = async (amount: number) => {
     const newWater = Math.min(water + amount, goal * 3);
     setWater(newWater);
-    localStorage.setItem('mockWaterIntake', JSON.stringify({
-      amount: newWater,
-      date: new Date().toLocaleDateString()
-    }));
+    if (user) {
+      await updateUserData(user.uid, {
+        waterIntake: {
+          amount: newWater,
+          date: new Date().toLocaleDateString()
+        }
+      });
+    } else {
+      localStorage.setItem('mockWaterIntake', JSON.stringify({
+        amount: newWater,
+        date: new Date().toLocaleDateString()
+      }));
+    }
   };
 
   const percentage = Math.min((water / goal) * 100, 100);

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, Button, Input, Badge } from '
 import { Calendar as CalendarIcon, Clock, Plus, Trash2, CalendarPlus } from 'lucide-react';
 import { format, parseISO, isAfter, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAuth } from './auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 
 export type Appointment = {
   id: string;
@@ -28,45 +30,38 @@ export function AppointmentScheduler({
   const [patientName, setPatientName] = useState(currentPatientName);
   const [appointmentType, setAppointmentType] = useState<'Primeira' | 'Retorno'>('Retorno');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
-    const saved = localStorage.getItem('mockAppointments');
-    if (saved) {
-      try {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setAppointments(JSON.parse(saved));
-      } catch (e) {
-        console.error(e);
-      }
-    } else {
-      // Mock initial data
-      const initial: Appointment[] = [
-        {
-          id: '1',
-          patientName: 'Maria Souza',
-          date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-          time: '14:00',
-          type: 'Retorno',
-          status: 'Agendada'
-        },
-        {
-          id: '2',
-          patientName: 'Carlos Oliveira',
-          date: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
-          time: '09:00',
-          type: 'Primeira',
-          status: 'Agendada'
+    async function loadData() {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data?.appointments) {
+          setAppointments(data.appointments);
+        } else {
+          setAppointments([]);
         }
-      ];
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAppointments(initial);
-      localStorage.setItem('mockAppointments', JSON.stringify(initial));
+      } else {
+        const saved = localStorage.getItem('mockAppointments');
+        if (saved) {
+          try {
+            setAppointments(JSON.parse(saved));
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
     }
-  }, []);
+    loadData();
+  }, [user]);
 
-  const saveAppointments = (newAppts: Appointment[]) => {
+  const saveAppointments = async (newAppts: Appointment[]) => {
     setAppointments(newAppts);
-    localStorage.setItem('mockAppointments', JSON.stringify(newAppts));
+    if (user) {
+      await updateUserData(user.uid, { appointments: newAppts });
+    } else {
+      localStorage.setItem('mockAppointments', JSON.stringify(newAppts));
+    }
   };
 
   const handleAddAppointment = (e: React.FormEvent) => {

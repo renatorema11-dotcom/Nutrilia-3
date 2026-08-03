@@ -6,6 +6,8 @@ import { BookOpen, Check, X, Edit3, Save, Sparkles, AlertCircle, Camera, ImageIc
 import { MOCK_PATIENT } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
+import { useAuth } from './auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
 
@@ -26,6 +28,7 @@ export function FoodDiary() {
   const [isMounted, setIsMounted] = useState(false);
   const [hasPlan, setHasPlan] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuth();
 
   // Using the first day plan (Segunda a Sexta) as a default for the diary
   const todayMeals = hasPlan ? (MOCK_PATIENT.currentPlan?.days[0].meals || []) : [];
@@ -33,30 +36,51 @@ export function FoodDiary() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
-    const savedPlans = localStorage.getItem('mockSavedPlans');
-    if (savedPlans && JSON.parse(savedPlans).length > 0) {
-      setHasPlan(true);
-    }
-    const saved = localStorage.getItem('mockFoodDiary');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.date === new Date().toLocaleDateString()) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setEntries(parsed.entries || {});
+    async function loadData() {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data?.savedPlans && data.savedPlans.length > 0) {
+          setHasPlan(true);
         }
-      } catch (e) {
-        console.error(e);
+        if (data?.foodDiary?.date === new Date().toLocaleDateString()) {
+          setEntries(data.foodDiary.entries || {});
+        }
+      } else {
+        const savedPlans = localStorage.getItem('mockSavedPlans');
+        if (savedPlans && JSON.parse(savedPlans).length > 0) {
+          setHasPlan(true);
+        }
+        const saved = localStorage.getItem('mockFoodDiary');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.date === new Date().toLocaleDateString()) {
+              setEntries(parsed.entries || {});
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
       }
     }
-  }, []);
+    loadData();
+  }, [user]);
 
-  const saveEntries = (newEntries: Record<string, MealEntry>) => {
+  const saveEntries = async (newEntries: Record<string, MealEntry>) => {
     setEntries(newEntries);
-    localStorage.setItem('mockFoodDiary', JSON.stringify({
-      entries: newEntries,
-      date: new Date().toLocaleDateString()
-    }));
+    if (user) {
+      await updateUserData(user.uid, {
+        foodDiary: {
+          entries: newEntries,
+          date: new Date().toLocaleDateString()
+        }
+      });
+    } else {
+      localStorage.setItem('mockFoodDiary', JSON.stringify({
+        entries: newEntries,
+        date: new Date().toLocaleDateString()
+      }));
+    }
   };
 
   const handleStatusUpdate = (mealName: string, status: MealStatus) => {
@@ -116,21 +140,30 @@ export function FoodDiary() {
       const data = await res.json();
       
       // Update state using functional update to ensure we have the latest state
+      let updatedEntries: Record<string, MealEntry> = {};
       setEntries(prev => {
         const updated = { ...prev };
         if (updated[mealName]) {
           updated[mealName].aiFeedback = data.feedback;
           updated[mealName].aiStatus = data.status;
         }
-        
-        // Also save to localStorage
-        localStorage.setItem('mockFoodDiary', JSON.stringify({
-          entries: updated,
-          date: new Date().toLocaleDateString()
-        }));
-        
+        updatedEntries = updated;
         return updated;
       });
+      
+      if (user) {
+        await updateUserData(user.uid, {
+          foodDiary: {
+            entries: updatedEntries,
+            date: new Date().toLocaleDateString()
+          }
+        });
+      } else {
+        localStorage.setItem('mockFoodDiary', JSON.stringify({
+          entries: updatedEntries,
+          date: new Date().toLocaleDateString()
+        }));
+      }
     } catch (e) {
       console.error(e);
     } finally {

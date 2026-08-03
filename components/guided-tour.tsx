@@ -3,28 +3,45 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Step } from 'react-joyride';
+import { useAuth } from './auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 
 // Dynamically import Joyride to avoid SSR issues
 const Joyride = dynamic(() => import('react-joyride').then((mod) => mod.Joyride), { ssr: false });
 
 export function GuidedTour() {
   const [run, setRun] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
-    const hasSeenTour = localStorage.getItem('hasSeenTour');
-    if (!hasSeenTour) {
-      // Small delay to let the page render first
-      const timer = setTimeout(() => setRun(true), 1000);
-      return () => clearTimeout(timer);
+    async function checkTour() {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (!data?.hasSeenTour) {
+          const timer = setTimeout(() => setRun(true), 1000);
+          return () => clearTimeout(timer);
+        }
+      } else {
+        const hasSeenTour = localStorage.getItem('hasSeenTour');
+        if (!hasSeenTour) {
+          const timer = setTimeout(() => setRun(true), 1000);
+          return () => clearTimeout(timer);
+        }
+      }
     }
-  }, []);
+    checkTour();
+  }, [user]);
 
-  const handleJoyrideCallback = (data: any) => {
+  const handleJoyrideCallback = async (data: any) => {
     const { status } = data;
     const finishedStatuses: string[] = ['finished', 'skipped'];
     if (finishedStatuses.includes(status)) {
       setRun(false);
-      localStorage.setItem('hasSeenTour', 'true');
+      if (user) {
+        await updateUserData(user.uid, { hasSeenTour: true });
+      } else {
+        localStorage.setItem('hasSeenTour', 'true');
+      }
     }
   };
 

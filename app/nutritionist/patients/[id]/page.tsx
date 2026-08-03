@@ -128,7 +128,7 @@ export default function PatientProfile({ params }: { params: Promise<{ id: strin
                   {(patient.currentPlan as any).days?.map((day: any, idx: number) => (
                     <div key={idx} className="space-y-4">
                       <h4 className="font-medium border-b pb-2">{day.name}</h4>
-                      {day.meals.map((meal: any, mIdx: number) => (
+                      {day.meals?.map((meal: any, mIdx: number) => (
                         <div key={mIdx} className="bg-gray-50 p-3 rounded-lg flex gap-4 items-start">
                           <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-gray-700 flex items-center shrink-0">
                             <Clock className="h-3 w-3 mr-1" /> {meal.time}
@@ -158,10 +158,10 @@ export default function PatientProfile({ params }: { params: Promise<{ id: strin
                     </Button>
                   </div>
                   
-                  {draftPlan.days.map((day: any, idx: number) => (
+                  {draftPlan.days?.map((day: any, idx: number) => (
                     <div key={idx} className="space-y-4">
                       <h4 className="font-medium border-b pb-2">{day.name}</h4>
-                      {day.meals.map((meal: any, mIdx: number) => (
+                      {day.meals?.map((meal: any, mIdx: number) => (
                         <div key={mIdx} className="bg-gray-50 p-3 rounded-lg flex gap-4 items-start">
                           <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-gray-700 flex items-center shrink-0">
                             <Clock className="h-3 w-3 mr-1" /> {meal.time}

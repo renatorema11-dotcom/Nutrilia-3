@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Smile, Frown, Meh, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from './auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 
 type Mood = 'sad' | 'neutral' | 'happy' | 'great';
 
@@ -17,30 +19,49 @@ const MOODS = [
 export function MoodDiary() {
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
-    const saved = localStorage.getItem('mockMoodDiary');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.date === new Date().toLocaleDateString()) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setSelectedMood(parsed.mood);
+    async function loadData() {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data?.moodDiary?.date === new Date().toLocaleDateString()) {
+          setSelectedMood(data.moodDiary.mood);
         }
-      } catch (e) {
-        console.error(e);
+      } else {
+        const saved = localStorage.getItem('mockMoodDiary');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.date === new Date().toLocaleDateString()) {
+              setSelectedMood(parsed.mood);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
       }
     }
-  }, []);
+    loadData();
+  }, [user]);
 
-  const handleSelectMood = (mood: Mood) => {
+  const handleSelectMood = async (mood: Mood) => {
     setSelectedMood(mood);
-    localStorage.setItem('mockMoodDiary', JSON.stringify({
-      mood,
-      date: new Date().toLocaleDateString()
-    }));
+    if (user) {
+      await updateUserData(user.uid, {
+        moodDiary: {
+          mood,
+          date: new Date().toLocaleDateString()
+        }
+      });
+    } else {
+      localStorage.setItem('mockMoodDiary', JSON.stringify({
+        mood,
+        date: new Date().toLocaleDateString()
+      }));
+    }
   };
 
   if (!isMounted) {

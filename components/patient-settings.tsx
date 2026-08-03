@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input } from '@/components/ui';
 import { Save, AlertCircle } from 'lucide-react';
+import { useAuth } from './auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 
 export function PatientSettings({ 
   patientData, 
@@ -11,6 +13,7 @@ export function PatientSettings({
   patientData: any; 
   onSave: (newData: any) => void;
 }) {
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     age: '',
@@ -67,24 +70,33 @@ export function PatientSettings({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
     
-    // Save patient data
-    localStorage.setItem('mockPatientData', JSON.stringify(formData));
-    
-    // Update the history last value
-    const savedHistory = localStorage.getItem('mockPatientHistory');
-    if (savedHistory) {
-      try {
-        const history = JSON.parse(savedHistory);
-        if (history.length > 0) {
-          // Update the last recorded weight (current month)
-          history[history.length - 1].weight = parseFloat(formData.weight);
-          localStorage.setItem('mockPatientHistory', JSON.stringify(history));
-        }
-      } catch (err) {}
+    if (user) {
+      const data = await getUserData(user.uid);
+      const history = data?.patientHistory || [];
+      if (history.length > 0) {
+        history[history.length - 1].weight = parseFloat(formData.weight);
+      }
+      
+      await updateUserData(user.uid, {
+        patientData: formData,
+        patientHistory: history
+      });
+    } else {
+      localStorage.setItem('mockPatientData', JSON.stringify(formData));
+      const savedHistory = localStorage.getItem('mockPatientHistory');
+      if (savedHistory) {
+        try {
+          const history = JSON.parse(savedHistory);
+          if (history.length > 0) {
+            history[history.length - 1].weight = parseFloat(formData.weight);
+            localStorage.setItem('mockPatientHistory', JSON.stringify(history));
+          }
+        } catch (err) {}
+      }
     }
 
     setSuccessMsg('Dados atualizados com sucesso!');

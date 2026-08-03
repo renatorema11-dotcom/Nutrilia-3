@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({ 
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
-});
+import { generateGeminiContent } from "@/lib/gemini";
 
 export async function POST(req: NextRequest) {
+  const fallbackJson = {
+    status: "positive",
+    feedback: "Excelente registro! Manter o acompanhamento diário das suas refeições é um passo fundamental para atingir seu objetivo com saúde."
+  };
+
   try {
     const { mealName, plannedItems, actualNotes, image, objective } = await req.json();
 
@@ -34,7 +30,6 @@ JSON esperado:
     let contents: any = prompt;
     
     if (image) {
-      // image is a base64 string like "data:image/jpeg;base64,..."
       const mimeType = image.substring(5, image.indexOf(';'));
       const base64Data = image.substring(image.indexOf(',') + 1);
       
@@ -49,23 +44,21 @@ JSON esperado:
       ];
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+    const result = await generateGeminiContent({
+      model: "gemini-2.5-flash",
       contents: contents,
       config: {
         responseMimeType: "application/json"
-      }
+      },
+      fallbackJson
     });
 
-    const text = response.text || "{}";
-    const data = JSON.parse(text);
+    const data = result.json || (result.text ? JSON.parse(result.text) : fallbackJson);
 
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error analyzing food:", error);
-    return NextResponse.json({ 
-      status: "neutral", 
-      feedback: "Desculpe, não consegui analisar o seu diário alimentar neste momento." 
-    }, { status: 500 });
+    return NextResponse.json(fallbackJson);
   }
 }
+

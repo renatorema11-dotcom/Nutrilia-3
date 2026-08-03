@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User, db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -21,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<UserRole>(null);
   const [user, setUser] = useState<User | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const savedRole = localStorage.getItem('mockRole') as UserRole;
@@ -32,7 +33,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // Fetch or create user doc in Firestore
         try {
           const userRef = doc(db, 'users', currentUser.uid);
           const userSnap = await getDoc(userRef);
@@ -70,18 +70,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const googleUser = result.user;
       setUser(googleUser);
 
-      // Check if user exists in Firestore
       const userRef = doc(db, 'users', googleUser.uid);
       const userSnap = await getDoc(userRef);
-      let assignedRole = preferredRole || 'patient';
+      let assignedRole: UserRole = preferredRole || 'patient';
 
+      let isNewUser = false;
       if (userSnap.exists()) {
         const data = userSnap.data();
         if (data.role) {
           assignedRole = data.role as UserRole;
         }
       } else {
-        // Save new user to Firestore
+        isNewUser = true;
         await setDoc(userRef, {
           id: googleUser.uid,
           email: googleUser.email,
@@ -95,7 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole(assignedRole);
       if (assignedRole) {
         localStorage.setItem('mockRole', assignedRole);
-        router.push(`/${assignedRole}`);
+        if (isNewUser && assignedRole === 'patient') {
+          router.push('/onboarding');
+        } else {
+          router.push(`/${assignedRole}`);
+        }
       }
     } catch (error) {
       console.error('Google Sign-In failed:', error);

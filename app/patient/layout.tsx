@@ -3,7 +3,7 @@
 import { useAuth } from '@/components/auth-provider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { LayoutDashboard, FileText, Activity, MessageSquare, LogOut, Leaf } from 'lucide-react';
+import { LayoutDashboard, FileText, Activity, MessageSquare, LogOut, Apple } from 'lucide-react';
 import Link from 'next/link';
 
 export default function PatientLayout({ children }: { children: React.ReactNode }) {
@@ -31,10 +31,10 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       {/* Sidebar */}
       <aside className="w-64 glass flex flex-col p-6">
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-            <Leaf className="h-6 w-6" />
+          <div className="w-10 h-10 bg-[#4c8466] rounded-xl flex items-center justify-center text-white shadow-lg">
+            <Apple className="h-6 w-6" />
           </div>
-          <h1 className="font-bold text-slate-800 text-xl tracking-tight">NutriConnect</h1>
+          <h1 className="font-bold text-[#276e58] text-xl tracking-tight">NutriAli</h1>
         </div>
         
         <nav className="flex-1 space-y-2">

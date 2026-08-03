@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { PieChart as PieChartIcon } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
-const COLORS = ['#0d9488', '#8b5cf6', '#f59e0b']; // teal-600, purple-500, amber-500
+const COLORS = ['#4c8466', '#8b5cf6', '#f59e0b']; // teal-600, purple-500, amber-500
 
 export function MacronutrientsChart() {
   const [data, setData] = useState([

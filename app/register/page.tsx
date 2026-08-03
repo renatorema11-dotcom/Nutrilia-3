@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useAuth, UserRole } from '@/components/auth-provider';
 import { Card, CardContent, Button, Input } from '@/components/ui';
-import { Leaf, User, Stethoscope } from 'lucide-react';
+import { Apple, User, Stethoscope } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Register() {
@@ -40,8 +40,8 @@ export default function Register() {
     <div className="min-h-screen flex items-center justify-center bg-transparent px-4 sm:px-6 lg:px-8 py-12">
       <div className="w-full max-w-md space-y-8 z-10 relative">
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 bg-teal-600 rounded-xl flex items-center justify-center shadow-lg">
-            <Leaf className="h-6 w-6 text-white" />
+          <div className="mx-auto h-12 w-12 bg-[#4c8466] rounded-xl flex items-center justify-center shadow-lg">
+            <Apple className="h-6 w-6 text-white" />
           </div>
           <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-800">
             Criar sua conta

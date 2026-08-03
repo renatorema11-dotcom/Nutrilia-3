@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Leaf, ArrowRight, ShieldCheck, Activity, Brain } from 'lucide-react';
+import { Apple, ArrowRight, ShieldCheck, Activity, Brain } from 'lucide-react';
 import { Button } from '@/components/ui';
 
 export default function Home() {
@@ -8,10 +8,10 @@ export default function Home() {
       {/* Header */}
       <header className="w-full max-w-7xl mx-auto px-6 py-8 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-teal-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-            <Leaf className="h-7 w-7" />
+          <div className="w-12 h-12 bg-[#4c8466] rounded-xl flex items-center justify-center text-white shadow-lg">
+            <Apple className="h-7 w-7" />
           </div>
-          <span className="text-2xl font-bold tracking-tight">NutriConnect</span>
+          <span className="text-2xl font-bold tracking-tight text-[#276e58]">NutriAli</span>
         </div>
         <div className="flex items-center gap-4">
           <Link href="/login">

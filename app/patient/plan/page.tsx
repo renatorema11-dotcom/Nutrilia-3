@@ -7,6 +7,8 @@ import Markdown from 'react-markdown';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useReactToPrint } from 'react-to-print';
+import { useAuth } from '@/components/auth-provider';
+import { getUserData } from '@/lib/db';
 
 function PlanCard({ plan }: { plan: any }) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -53,14 +55,15 @@ function PlanCard({ plan }: { plan: any }) {
 export default function PatientPlan() {
   const [savedPlans, setSavedPlans] = useState<any[]>([]);
   const [isMounted, setIsMounted] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
 
-    const isValidPlanFormat = (data: string) => {
+    const isValidPlanFormat = (data: any) => {
       try {
-        const parsed = JSON.parse(data);
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
         if (!Array.isArray(parsed)) return false;
         return parsed.every(plan => plan && typeof plan === 'object' && 'id' in plan);
       } catch {
@@ -68,16 +71,25 @@ export default function PatientPlan() {
       }
     };
 
-    const plansStr = localStorage.getItem('mockSavedPlans');
-    if (plansStr) {
-      if (isValidPlanFormat(plansStr)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setSavedPlans(JSON.parse(plansStr));
+    async function loadData() {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data?.savedPlans && isValidPlanFormat(data.savedPlans)) {
+          setSavedPlans(data.savedPlans);
+        }
       } else {
-        console.error('Invalid saved plans format in localStorage');
+        const plansStr = localStorage.getItem('mockSavedPlans');
+        if (plansStr) {
+          if (isValidPlanFormat(plansStr)) {
+            setSavedPlans(JSON.parse(plansStr));
+          } else {
+            console.error('Invalid saved plans format in localStorage');
+          }
+        }
       }
     }
-  }, []);
+    loadData();
+  }, [user]);
 
   if (!isMounted) {
     return null; // Or a loading spinner

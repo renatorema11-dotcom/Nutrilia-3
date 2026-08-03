@@ -22,6 +22,8 @@ import { MoodDiary } from '@/components/mood-diary';
 import { WeightProgress } from '@/components/weight-progress';
 import { FoodDiary } from '@/components/food-diary';
 import { Achievements } from '@/components/achievements';
+import { useAuth } from '@/components/auth-provider';
+import { getUserData, updateUserData } from '@/lib/db';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
@@ -33,6 +35,7 @@ export default function PatientDashboard() {
   const [hasPlan, setHasPlan] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { user } = useAuth();
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
@@ -40,39 +43,59 @@ export default function PatientDashboard() {
   });
 
   useEffect(() => {
-    const isValidPlanFormat = (data: string) => {
+    const isValidPlanFormat = (data: any) => {
       try {
-        const parsed = JSON.parse(data);
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
         if (!Array.isArray(parsed)) return false;
-        return parsed.every(plan => plan && typeof plan === 'object' && 'id' in plan);
+        return parsed.every((plan: any) => plan && typeof plan === 'object' && 'id' in plan);
       } catch {
         return false;
       }
     };
 
-    const savedPlans = localStorage.getItem('mockSavedPlans');
-    if (savedPlans && isValidPlanFormat(savedPlans) && JSON.parse(savedPlans).length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHasPlan(true);
-    }
+    async function loadData() {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data?.savedPlans && isValidPlanFormat(data.savedPlans) && data.savedPlans.length > 0) {
+          setHasPlan(true);
+        }
+        if (data?.patientData) {
+          setPatientData(data.patientData);
+        } else {
+          setPatientData({
+            name: MOCK_PATIENT.name,
+            age: 32,
+            weight: 70,
+            height: 165,
+            initialWeight: MOCK_PATIENT.initialWeight || 75,
+            targetWeight: MOCK_PATIENT.targetWeight || 65,
+            objective: 'Emagrecimento'
+          });
+        }
+      } else {
+        const savedPlans = localStorage.getItem('mockSavedPlans');
+        if (savedPlans && isValidPlanFormat(savedPlans) && JSON.parse(savedPlans).length > 0) {
+          setHasPlan(true);
+        }
 
-    const saved = localStorage.getItem('mockPatientData');
-    if (saved) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPatientData(JSON.parse(saved));
-    } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPatientData({
-        name: MOCK_PATIENT.name,
-        age: 32,
-        weight: 70,
-        height: 165,
-        initialWeight: MOCK_PATIENT.initialWeight || 75,
-        targetWeight: MOCK_PATIENT.targetWeight || 65,
-        objective: 'Emagrecimento'
-      });
+        const saved = localStorage.getItem('mockPatientData');
+        if (saved) {
+          setPatientData(JSON.parse(saved));
+        } else {
+          setPatientData({
+            name: MOCK_PATIENT.name,
+            age: 32,
+            weight: 70,
+            height: 165,
+            initialWeight: MOCK_PATIENT.initialWeight || 75,
+            targetWeight: MOCK_PATIENT.targetWeight || 65,
+            objective: 'Emagrecimento'
+          });
+        }
+      }
     }
-  }, []);
+    loadData();
+  }, [user]);
 
   const nextAppointment = parseISO(MOCK_PATIENT.nextAppointment);
 
@@ -96,12 +119,9 @@ export default function PatientDashboard() {
     }
   };
 
-  const savePlan = () => {
+  const savePlan = async () => {
     setIsSaving(true);
     try {
-      const savedPlansStr = localStorage.getItem('mockSavedPlans');
-      const savedPlans = savedPlansStr ? JSON.parse(savedPlansStr) : [];
-      
       const newPlan = {
         id: Date.now().toString(),
         date: new Date().toISOString(),
@@ -109,10 +129,18 @@ export default function PatientDashboard() {
         objective: patientData.objective
       };
       
-      savedPlans.unshift(newPlan);
-      localStorage.setItem('mockSavedPlans', JSON.stringify(savedPlans));
+      if (user) {
+        const data = await getUserData(user.uid);
+        const savedPlans = data?.savedPlans || [];
+        savedPlans.unshift(newPlan);
+        await updateUserData(user.uid, { savedPlans });
+      } else {
+        const savedPlansStr = localStorage.getItem('mockSavedPlans');
+        const savedPlans = savedPlansStr ? JSON.parse(savedPlansStr) : [];
+        savedPlans.unshift(newPlan);
+        localStorage.setItem('mockSavedPlans', JSON.stringify(savedPlans));
+      }
       
-      // Redirect to Meu Plano
       router.push('/patient/plan');
     } catch (error) {
       console.error("Error saving plan:", error);

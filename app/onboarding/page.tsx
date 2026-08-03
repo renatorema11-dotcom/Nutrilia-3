@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, Button, Input } from '@/components/ui';
 import { Activity, ArrowRight, User } from 'lucide-react';
 import { motion, Variants } from 'motion/react';
+import { useAuth } from '@/components/auth-provider';
+import { updateUserData } from '@/lib/db';
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -23,6 +25,7 @@ const itemVariants: Variants = {
 
 export default function PatientOnboarding() {
   const router = useRouter();
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     age: '',
@@ -61,11 +64,15 @@ export default function PatientOnboarding() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
     
-    localStorage.setItem('mockPatientData', JSON.stringify(formData));
+    if (user) {
+      await updateUserData(user.uid, { patientData: formData });
+    } else {
+      localStorage.setItem('mockPatientData', JSON.stringify(formData));
+    }
     router.push('/patient');
   };
 

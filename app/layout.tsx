@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'NutriConnect',
+  title: 'NutriAli',
   description: 'Plataforma de conexão entre nutricionistas e pacientes, com acompanhamento de planos e IA.',
 };
 
