@@ -52,3 +52,87 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
 }
+
+/* Hide default Google Translate banner, popups, tooltips, and iframe elements completely */
+.goog-te-banner-frame,
+.goog-te-banner-frame.skiptranslate,
+iframe.goog-te-banner-frame,
+iframe.goog-te-banner-frame.skiptranslate,
+iframe[id*=":1.container"],
+iframe[id*=":0.container"],
+iframe[id*="goog-te-banner-frame"],
+iframe[class*="goog-te-banner-frame"],
+iframe[src*="translate.google"],
+iframe[src*="translate.googleapis"],
+.goog-te-balloon-frame,
+#goog-gt-tt,
+.goog-tooltip,
+.goog-tooltip:hover,
+.VIpgJd-yD32b-r4n81b,
+.VIpgJd-ZA163-O3G3ed,
+.VIpgJd-Z1423c-kR3T3d,
+.VIpgJd-Z1423c-v3L3ed,
+.VIpgJd-Lg26de-Lg26de,
+.VIpgJd-Lg26de-O22p2b,
+.VIpgJd-Lg26de-xI9oP-O22p2b,
+.VIpgJd-yD32b-Lg26de,
+.goog-te-gadget,
+#goog-gt-vt,
+.goog-te-spinner-pos,
+.goog-te-spinner-animation,
+#goog-gt-tt * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  clip: rect(0, 0, 0, 0) !important;
+  height: 0px !important;
+  width: 0px !important;
+  max-height: 0px !important;
+  max-width: 0px !important;
+}
+
+body, html {
+  top: 0px !important;
+  position: static !important;
+}
+
+/* Hide top iframe or top banner elements added directly to body/html */
+body > iframe[src*="translate"],
+html > iframe[src*="translate"],
+body > iframe.goog-te-banner-frame,
+body > .skiptranslate,
+html > .skiptranslate {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Remove translate highlight colors and text background changes */
+.goog-text-highlight {
+  background-color: transparent !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+font[style] {
+  background-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Custom scrollbar for language dropdown */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+

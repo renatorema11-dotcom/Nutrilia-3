@@ -39,14 +39,14 @@ export function MacronutrientsChart() {
   }
 
   return (
-    <Card className="h-full tour-macros">
+    <Card className="h-full tour-macros flex flex-col">
       <CardHeader>
         <CardTitle className="flex items-center text-slate-800 text-base">
           <PieChartIcon className="w-5 h-5 mr-2 text-teal-600" />
           Metas Diárias
         </CardTitle>
       </CardHeader>
-      <CardContent className="h-[250px]">
+      <CardContent className="flex-1 min-h-[250px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie

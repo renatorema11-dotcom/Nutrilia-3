@@ -43,7 +43,7 @@ export function DailyNutritionTip({ objective }: { objective: string }) {
   }, [objective]);
 
   return (
-    <Card className="bg-amber-50/80 border-amber-200">
+    <Card className="bg-amber-50/80 border-amber-200 h-full flex flex-col">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center text-amber-800 text-sm font-bold uppercase tracking-wide">
           <Lightbulb className="w-4 h-4 mr-2 text-amber-500" />

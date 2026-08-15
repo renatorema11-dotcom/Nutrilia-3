@@ -1,15 +1,12 @@
 'use client';
 
-import { MOCK_PATIENT } from '@/lib/mock-data';
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
-import { format, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { Calendar, MessageSquare, Apple, Sparkles, Loader2, Download, Settings, Activity, Save, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import Markdown from 'react-markdown';
-import { useReactToPrint } from 'react-to-print';
+import { handlePrintOrDownload } from '@/lib/print-utils';
 
 import { EvolutionChart } from '@/components/evolution-chart';
 import { DailyNutritionTip } from '@/components/daily-nutrition-tip';
@@ -37,10 +34,9 @@ export default function PatientDashboard() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const handlePrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: 'Plano Alimentar',
-  });
+  const handlePrint = () => {
+    handlePrintOrDownload(printRef.current, 'Plano Alimentar', creativePlan);
+  };
 
   useEffect(() => {
     const isValidPlanFormat = (data: any) => {
@@ -63,13 +59,13 @@ export default function PatientDashboard() {
           setPatientData(data.patientData);
         } else {
           setPatientData({
-            name: MOCK_PATIENT.name,
-            age: 32,
+            name: user.displayName || 'Paciente',
+            age: 30,
             weight: 70,
-            height: 165,
-            initialWeight: MOCK_PATIENT.initialWeight || 75,
-            targetWeight: MOCK_PATIENT.targetWeight || 65,
-            objective: 'Emagrecimento'
+            height: 168,
+            initialWeight: 70,
+            targetWeight: 65,
+            objective: 'Saúde e Bem-Estar'
           });
         }
       } else {
@@ -83,21 +79,19 @@ export default function PatientDashboard() {
           setPatientData(JSON.parse(saved));
         } else {
           setPatientData({
-            name: MOCK_PATIENT.name,
-            age: 32,
+            name: 'Paciente',
+            age: 30,
             weight: 70,
-            height: 165,
-            initialWeight: MOCK_PATIENT.initialWeight || 75,
-            targetWeight: MOCK_PATIENT.targetWeight || 65,
-            objective: 'Emagrecimento'
+            height: 168,
+            initialWeight: 70,
+            targetWeight: 65,
+            objective: 'Saúde e Bem-Estar'
           });
         }
       }
     }
     loadData();
   }, [user]);
-
-  const nextAppointment = parseISO(MOCK_PATIENT.nextAppointment);
 
   const generateCreativePlan = async () => {
     if (!patientData) return;
@@ -153,9 +147,43 @@ export default function PatientDashboard() {
 
   const renderOverview = () => (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="tour-plan-generator md:col-span-2 flex flex-col gap-4">
-          <CardHeader className="pb-0">
+      {/* Top Row: Key Metrics & Quick Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div className="lg:col-span-1 h-full">
+          <WeightProgress 
+            initialWeight={patientData.initialWeight || patientData.weight + 5} 
+            currentWeight={patientData.weight} 
+            targetWeight={patientData.targetWeight || patientData.weight - 5} 
+          />
+        </div>
+        <div className="lg:col-span-2 h-full">
+          <DailyNutritionTip objective={patientData.objective} />
+        </div>
+        <div className="lg:col-span-1 h-full">
+          <Card className="tour-chat h-full">
+            <CardContent className="pt-6 h-full flex flex-col justify-center">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center shadow-sm">
+                  <MessageSquare className="w-6 h-6 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800">Dúvidas?</h3>
+                  <p className="text-sm text-slate-600 mt-1">Converse com nosso assistente sobre seu progresso.</p>
+                </div>
+                <Link href="/patient/chat" className="w-full">
+                  <Button variant="outline" className="w-full bg-white/40">Abrir Chat</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Second Row: AI Generator and Appointments */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch mb-6">
+        <div className="lg:col-span-2 h-full">
+          <Card className="tour-plan-generator h-full flex flex-col gap-4">
+            <CardHeader className="pb-0">
             <CardTitle className="flex items-center text-teal-800">
               <Sparkles className="w-5 h-5 mr-2 text-teal-600" />
               Ideias Criativas com IA
@@ -208,7 +236,7 @@ export default function PatientDashboard() {
                     <Download className="w-4 h-4 mr-2" />
                     Exportar PDF
                   </Button>
-                  <Button onClick={() => setCreativePlan('')} variant="outline" className="flex-1 text-xs h-9">
+                  <Button onClick={() => { if (window.confirm('Você tem certeza?')) setCreativePlan(''); }} variant="outline" className="flex-1 text-xs h-9">
                     Gerar nova opção
                   </Button>
                 </div>
@@ -216,33 +244,10 @@ export default function PatientDashboard() {
             )}
           </CardContent>
         </Card>
+        </div>
 
-        <div className="space-y-6">
-          <WeightProgress 
-            initialWeight={patientData.initialWeight || patientData.weight + 5} 
-            currentWeight={patientData.weight} 
-            targetWeight={patientData.targetWeight || patientData.weight - 5} 
-          />
-          <DailyNutritionTip objective={patientData.objective} />
-          
+        <div className="lg:col-span-1 h-full">
           <AppointmentScheduler currentPatientName={patientData.name} />
-
-          <Card className="tour-chat">
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center space-y-4">
-                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center shadow-sm">
-                  <MessageSquare className="w-6 h-6 text-purple-600" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-800">Dúvidas?</h3>
-                  <p className="text-sm text-slate-600 mt-1">Converse com nosso assistente sobre seu progresso.</p>
-                </div>
-                <Link href="/patient/chat" className="w-full">
-                  <Button variant="outline" className="w-full bg-white/40">Abrir Chat</Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
       
@@ -253,7 +258,7 @@ export default function PatientDashboard() {
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="tour-evolution lg:col-span-2">
+            <div className="tour-evolution lg:col-span-2 h-full">
               <EvolutionChart />
             </div>
             <div className="lg:col-span-1 h-full">
@@ -261,13 +266,17 @@ export default function PatientDashboard() {
             </div>
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+            <div className="lg:col-span-2 h-full">
               <FoodDiary />
             </div>
             <div className="lg:col-span-1 flex flex-col gap-6">
-              <WaterTracker />
-              <MoodDiary />
+              <div className="flex-1">
+                <WaterTracker />
+              </div>
+              <div className="flex-1">
+                <MoodDiary />
+              </div>
             </div>
           </div>
         </div>

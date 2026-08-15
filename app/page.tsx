@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Apple, ArrowRight, ShieldCheck, Activity, Brain } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { LanguageSelector } from '@/components/language-selector';
 
 export default function Home() {
   return (
@@ -13,7 +14,8 @@ export default function Home() {
           </div>
           <span className="text-2xl font-bold tracking-tight text-[#276e58]">NutriAli</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <LanguageSelector />
           <Link href="/login">
             <Button variant="ghost" className="font-bold">Entrar</Button>
           </Link>

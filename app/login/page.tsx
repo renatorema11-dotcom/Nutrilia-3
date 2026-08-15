@@ -6,6 +6,7 @@ import { useAuth } from '@/components/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input } from '@/components/ui';
 import { Apple } from 'lucide-react';
 import Link from 'next/link';
+import { LanguageSelector } from '@/components/language-selector';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -42,7 +43,10 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-transparent px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-transparent px-4 sm:px-6 lg:px-8 relative">
+      <div className="absolute top-4 right-4 z-50">
+        <LanguageSelector />
+      </div>
       <div className="w-full max-w-md space-y-8 z-10 relative">
         <div className="text-center">
           <div className="mx-auto h-12 w-12 bg-[#4c8466] rounded-xl flex items-center justify-center shadow-lg">

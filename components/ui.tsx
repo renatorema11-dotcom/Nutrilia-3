@@ -16,6 +16,10 @@ export function CardTitle({ children, className = '' }: { children: React.ReactN
   return <h3 className={`text-lg font-bold text-slate-800 ${className}`}>{children}</h3>;
 }
 
+export function CardDescription({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <p className={`text-sm text-slate-500 ${className}`}>{children}</p>;
+}
+
 export function CardContent({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <div className={`p-6 ${className}`}>{children}</div>;
 }
@@ -64,20 +68,26 @@ export function Input({
   value,
   onChange,
   className = '',
-  required = false
+  required = false,
+  step,
+  min,
+  max
 }: {
-  id: string;
+  id?: string;
   label?: string;
   type?: string;
   placeholder?: string;
-  value?: string;
+  value?: string | number;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   className?: string;
   required?: boolean;
+  step?: string | number;
+  min?: string | number;
+  max?: string | number;
 }) {
   return (
     <div className={`space-y-1 ${className}`}>
-      {label && <label htmlFor={id} className="block text-sm font-medium text-slate-700">{label}</label>}
+      {label && id && <label htmlFor={id} className="block text-sm font-medium text-slate-700">{label}</label>}
       <input
         id={id}
         type={type}
@@ -85,6 +95,9 @@ export function Input({
         value={value}
         onChange={onChange}
         required={required}
+        step={step}
+        min={min}
+        max={max}
         className="w-full rounded-lg bg-white/80 border border-white/50 px-3 py-2 text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm transition-shadow"
       />
     </div>

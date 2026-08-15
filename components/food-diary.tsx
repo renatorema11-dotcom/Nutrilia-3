@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { BookOpen, Check, X, Edit3, Save, Sparkles, AlertCircle, Camera, ImageIcon } from 'lucide-react';
-import { MOCK_PATIENT } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import { useAuth } from './auth-provider';
@@ -30,8 +29,8 @@ export function FoodDiary() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
 
-  // Using the first day plan (Segunda a Sexta) as a default for the diary
-  const todayMeals = hasPlan ? (MOCK_PATIENT.currentPlan?.days[0].meals || []) : [];
+  // Using active plan or fallback meals for the diary
+  const [todayMeals, setTodayMeals] = useState<{ name: string; time: string; items: string[] }[]>([]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -39,7 +38,10 @@ export function FoodDiary() {
     async function loadData() {
       if (user) {
         const data = await getUserData(user.uid);
-        if (data?.savedPlans && data.savedPlans.length > 0) {
+        if (data?.currentPlan?.days?.[0]?.meals) {
+          setHasPlan(true);
+          setTodayMeals(data.currentPlan.days[0].meals);
+        } else if (data?.savedPlans && data.savedPlans.length > 0) {
           setHasPlan(true);
         }
         if (data?.foodDiary?.date === new Date().toLocaleDateString()) {
@@ -47,8 +49,16 @@ export function FoodDiary() {
         }
       } else {
         const savedPlans = localStorage.getItem('mockSavedPlans');
-        if (savedPlans && JSON.parse(savedPlans).length > 0) {
-          setHasPlan(true);
+        if (savedPlans) {
+          try {
+            const parsed = JSON.parse(savedPlans);
+            if (parsed.length > 0 && parsed[0]?.days?.[0]?.meals) {
+              setHasPlan(true);
+              setTodayMeals(parsed[0].days[0].meals);
+            }
+          } catch (e) {
+            console.error(e);
+          }
         }
         const saved = localStorage.getItem('mockFoodDiary');
         if (saved) {
@@ -134,7 +144,7 @@ export function FoodDiary() {
           plannedItems: plannedItems.join(', '),
           actualNotes: notes,
           image: editImage, // Send base64 image if available
-          objective: MOCK_PATIENT.objective || 'Manutenção'
+          objective: 'Manutenção e Saúde'
         })
       });
       const data = await res.json();

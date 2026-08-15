@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, Input, Button } from '@/components/ui';
-import { MOCK_PATIENTS_LIST } from '@/lib/mock-data';
 import { Send, Sparkles, UserRound } from 'lucide-react';
+import { getPatients, Patient } from '@/lib/patients';
+import { useAuth } from '@/components/auth-provider';
 
 interface Message {
   role: 'user' | 'ai';
@@ -11,12 +12,24 @@ interface Message {
 }
 
 export default function NutritionistAssistant() {
+  const { user } = useAuth();
+  const userName = user?.displayName ? user.displayName.split(' ')[0] : 'Nutricionista';
+
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', text: 'Olá, Dra. Ana! Sou seu assistente clínico. Posso resumir casos, buscar pacientes parados ou ajudar a revisar protocolos.' }
+    { role: 'ai', text: `Olá, ${userName}! Sou seu assistente clínico com IA. Posso resumir casos, buscar dados dos seus pacientes cadastrados e ajudar a revisar protocolos.` }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    async function loadPatients() {
+      const data = await getPatients();
+      setPatients(data);
+    }
+    loadPatients();
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,10 +49,11 @@ export default function NutritionistAssistant() {
     setIsLoading(true);
 
     try {
-      // Dump patients list as context
-      const context = JSON.stringify(MOCK_PATIENTS_LIST.map(p => ({
+      const context = JSON.stringify(patients.map(p => ({
         nome: p.name,
         idade: p.age,
+        objetivo: p.objective,
+        pesoAtual: p.weight,
         temPlano: !!p.currentPlan,
         statusPlano: p.currentPlan?.status,
         proximaConsulta: p.nextAppointment
@@ -53,9 +67,9 @@ export default function NutritionistAssistant() {
           context
         })
       });
-      
+
       const data = await res.json();
-      
+
       if (data.text) {
         setMessages(prev => [...prev, { role: 'ai', text: data.text }]);
       }
@@ -71,7 +85,7 @@ export default function NutritionistAssistant() {
     <div className="h-[calc(100vh-8rem)] flex flex-col">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Assistente IA Clínico</h1>
-        <p className="text-gray-600 mb-6">Seu co-piloto para análise de dados dos pacientes.</p>
+        <p className="text-gray-600 mb-6">Seu co-piloto para análise de dados dos seus pacientes.</p>
       </div>
 
       <Card className="flex-1 flex flex-col min-h-0 border-emerald-100 shadow-sm">

@@ -67,14 +67,14 @@ export function EvolutionChart() {
   if (data.length === 0) return null;
 
   return (
-    <Card className="w-full">
+    <Card className="w-full h-full flex flex-col">
       <CardHeader>
         <CardTitle className="flex items-center text-slate-800">
           <Activity className="w-5 h-5 mr-2 text-teal-600" />
           Evolução de Peso e Gordura
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         <div className="h-[300px] w-full mt-4">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>

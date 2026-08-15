@@ -135,14 +135,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const userRef = doc(db, 'users', result.user.uid);
-      await setDoc(userRef, {
+      const now = new Date().toISOString();
+      const userData = {
         id: result.user.uid,
         email,
         displayName: name,
         role,
         ...extraData,
-        createdAt: new Date().toISOString()
-      });
+        createdAt: now
+      };
+      
+      const removeUndefined = (obj: any): any => {
+        if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) return obj.map(removeUndefined);
+        const cleaned: any = {};
+        for (const [key, value] of Object.entries(obj)) {
+          if (value !== undefined) cleaned[key] = removeUndefined(value);
+        }
+        return cleaned;
+      };
+
+      await setDoc(userRef, removeUndefined(userData));
+
+      if (role === 'patient') {
+        const patientRef = doc(db, 'patients', result.user.uid);
+        const patientData = {
+          id: result.user.uid,
+          name,
+          email,
+          age: 30,
+          weight: 70,
+          height: 168,
+          objective: 'Saúde Geral',
+          createdAt: now,
+          measurements: [{
+            date: now.split('T')[0],
+            weight: 70,
+            height: 168
+          }],
+          currentPlan: null,
+          pastPlans: []
+        };
+        await setDoc(patientRef, removeUndefined(patientData));
+      }
+
       setRole(role);
       if (role) {
         localStorage.setItem('mockRole', role);

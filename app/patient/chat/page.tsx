@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, Input, Button } from '@/components/ui';
-import { MOCK_PATIENT } from '@/lib/mock-data';
+import { Card, CardContent, Input, Button } from '@/components/ui';
 import { Send, Bot, User } from 'lucide-react';
+import { useAuth } from '@/components/auth-provider';
+import { getUserData } from '@/lib/db';
 
 interface Message {
   role: 'user' | 'ai';
@@ -11,12 +12,43 @@ interface Message {
 }
 
 export default function PatientChat() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', text: 'Olá! Sou seu assistente nutricional. Como posso ajudar com seu plano alimentar hoje?' }
+    { role: 'ai', text: 'Olá! Sou seu assistente nutricional com Inteligência Artificial. Como posso ajudar com seu plano alimentar hoje?' }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [patientContext, setPatientContext] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    async function loadContext() {
+      let weight = 70;
+      let objective = 'Alimentação Saudável';
+
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data?.patientData) {
+          weight = data.patientData.weight || 70;
+          objective = data.patientData.objective || objective;
+        }
+      } else {
+        const saved = localStorage.getItem('mockPatientData');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            weight = parsed.weight || 70;
+            objective = parsed.objective || objective;
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      setPatientContext(`Peso do paciente: ${weight}kg. Objetivo: ${objective}.`);
+    }
+    loadContext();
+  }, [user]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,20 +68,17 @@ export default function PatientChat() {
     setIsLoading(true);
 
     try {
-      // Build context string from mock data
-      const context = `Plano atual: ${JSON.stringify(MOCK_PATIENT.currentPlan?.days)}. Peso atual: ${MOCK_PATIENT.measurements[MOCK_PATIENT.measurements.length - 1].weight}kg.`;
-
       const res = await fetch('/api/gemini/chat/patient', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...messages, { role: 'user', text: userMessage }],
-          context
+          context: patientContext
         })
       });
-      
+
       const data = await res.json();
-      
+
       if (data.text) {
         setMessages(prev => [...prev, { role: 'ai', text: data.text }]);
       }

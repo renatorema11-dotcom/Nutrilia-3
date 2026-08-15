@@ -6,16 +6,16 @@ import { Calendar, Download, FileText } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useReactToPrint } from 'react-to-print';
+import { handlePrintOrDownload } from '@/lib/print-utils';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData } from '@/lib/db';
 
 function PlanCard({ plan }: { plan: any }) {
   const contentRef = useRef<HTMLDivElement>(null);
-  const handlePrint = useReactToPrint({
-    contentRef,
-    documentTitle: 'Meu Plano Alimentar',
-  });
+
+  const onExport = () => {
+    handlePrintOrDownload(contentRef.current, 'Meu Plano Alimentar', plan.content);
+  };
 
   return (
     <Card className="border-teal-100">
@@ -34,7 +34,7 @@ function PlanCard({ plan }: { plan: any }) {
           <Button 
             variant="outline" 
             className="h-8 text-xs bg-white text-teal-700 hover:text-teal-800"
-            onClick={() => handlePrint()}
+            onClick={onExport}
           >
             <Download className="w-3 h-3 mr-1" /> Exportar
           </Button>
