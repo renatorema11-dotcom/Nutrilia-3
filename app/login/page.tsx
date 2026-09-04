@@ -33,8 +33,10 @@ export default function Login() {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoadingGoogle(true);
-      const preferredRole = email.includes('ana') ? 'nutritionist' : 'patient';
-      await loginWithGoogle(preferredRole);
+      // Novos usuários Google entram como paciente; nutricionistas se cadastram
+      // pela tela de registro com seletor de perfil. Usuários existentes recebem
+      // o papel salvo no próprio documento.
+      await loginWithGoogle('patient');
     } catch (error) {
       console.error('Google Sign-In Error:', error);
     } finally {
@@ -56,7 +58,7 @@ export default function Login() {
             Entrar no NutriAli
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Dica: email contendo &apos;ana&apos; entra como Nutricionista.
+            Acesse sua conta para continuar sua jornada de saúde.
           </p>
         </div>
 
