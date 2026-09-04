@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button, Input } from '@/components/ui';
-import { X, UserPlus, Loader2 } from 'lucide-react';
+import { X, UserPlus, Loader2, Copy, Check } from 'lucide-react';
 import { createPatient, Patient } from '@/lib/patients';
 
 interface AddPatientModalProps {
@@ -24,8 +24,27 @@ export function AddPatientModal({ isOpen, onClose, onPatientAdded }: AddPatientM
     objective: 'Emagrecimento'
   });
   const [error, setError] = useState('');
+  const [createdPassword, setCreatedPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    setCreatedPassword(null);
+    setCopied(false);
+    onClose();
+  };
+
+  const handleCopy = async () => {
+    if (!createdPassword) return;
+    try {
+      await navigator.clipboard.writeText(createdPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback: seleção manual
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,7 +95,11 @@ export function AddPatientModal({ isOpen, onClose, onPatientAdded }: AddPatientM
         bodyFat: '',
         objective: 'Emagrecimento'
       });
-      onClose();
+      if (newPatient.tempPassword) {
+        setCreatedPassword(newPatient.tempPassword);
+      } else {
+        onClose();
+      }
     } catch (err: any) {
       console.error('Erro ao adicionar paciente:', err);
       setError('Ocorreu um erro ao cadastrar o paciente. Tente novamente.');
@@ -100,7 +123,7 @@ export function AddPatientModal({ isOpen, onClose, onPatientAdded }: AddPatientM
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
             type="button"
           >
@@ -113,6 +136,31 @@ export function AddPatientModal({ isOpen, onClose, onPatientAdded }: AddPatientM
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
               {error}
+            </div>
+          )}
+
+          {createdPassword && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2">
+              <p className="text-sm font-semibold text-emerald-800">Paciente cadastrado com sucesso!</p>
+              <p className="text-xs text-emerald-700">
+                Senha temporária (copie agora — ela não será mostrada de novo):
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 bg-white border border-emerald-200 rounded font-mono text-sm tracking-wide text-emerald-900 select-all">
+                  {createdPassword}
+                </code>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="p-2 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                  aria-label="Copiar senha"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-emerald-600">
+                No primeiro login, o paciente será obrigado a criar a própria senha.
+              </p>
             </div>
           )}
 
@@ -137,7 +185,7 @@ export function AddPatientModal({ isOpen, onClose, onPatientAdded }: AddPatientM
                 required
               />
               <p className="text-[10px] text-slate-500 mt-0.5">
-                Será criada uma conta de login no Firebase com a senha inicial: <strong className="text-emerald-700">Mudar@123</strong>
+                Será criada uma conta com uma <strong className="text-emerald-700">senha temporária única</strong>. O paciente deverá trocá-la no primeiro acesso.
               </p>
             </div>
 
@@ -221,7 +269,7 @@ export function AddPatientModal({ isOpen, onClose, onPatientAdded }: AddPatientM
 
           {/* Footer */}
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+            <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
               Cancelar
             </Button>
             <Button type="submit" disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]">

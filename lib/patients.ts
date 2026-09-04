@@ -42,6 +42,8 @@ export interface Patient {
   measurements: Measurement[];
   currentPlan?: Plan | null;
   pastPlans?: Plan[];
+  /** Senha temporária gerada no cadastro — NÃO é persistida no Firestore. Exibida uma única vez ao nutricionista. */
+  tempPassword?: string;
 }
 
 const LOCAL_STORAGE_KEY = 'nutri_real_patients';
@@ -127,11 +129,13 @@ export async function createPatient(data: {
 }): Promise<Patient> {
   let newId = 'pat_' + Date.now();
   const now = new Date().toISOString();
+  let tempPassword: string | undefined;
 
   if (data.email) {
-    const authUid = await createPatientAuthUser(data.email, data.name, 'Mudar@123');
-    if (authUid) {
-      newId = authUid;
+    const { uid, tempPassword: generatedPassword } = await createPatientAuthUser(data.email, data.name);
+    if (uid) {
+      newId = uid;
+      tempPassword = generatedPassword;
     }
   }
 
@@ -170,6 +174,7 @@ export async function createPatient(data: {
         displayName: data.name,
         role: 'patient',
         createdAt: now,
+        mustChangePassword: true,
         patientData: sanitizedPatient
       }), { merge: true });
     }
@@ -181,7 +186,7 @@ export async function createPatient(data: {
   const updatedLocal = [newPatient, ...currentLocal];
   setLocalPatients(updatedLocal);
 
-  return newPatient;
+  return { ...newPatient, tempPassword };
 }
 
 export async function updatePatient(id: string, updates: Partial<Patient>): Promise<void> {

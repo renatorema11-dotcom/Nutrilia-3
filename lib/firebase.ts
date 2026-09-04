@@ -12,21 +12,36 @@ export const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestore
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
   : getFirestore(app);
 
-// Helper to create Firebase Auth user account for a patient without logging out current active user
-export async function createPatientAuthUser(email: string, name: string, password = 'Mudar@123'): Promise<string | null> {
+// Gerador de senha temporária segura (sem caracteres ambíguos: 0/O, 1/I/l)
+const TEMP_PASSWORD_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+export function generateTempPassword(length = 12): string {
+  const random = new Uint32Array(length);
+  crypto.getRandomValues(random);
+  let pw = '';
+  for (let i = 0; i < length; i++) {
+    pw += TEMP_PASSWORD_CHARSET[random[i] % TEMP_PASSWORD_CHARSET.length];
+  }
+  return pw;
+}
+
+// Helper to create Firebase Auth user account for a patient without logging out current active user.
+// Retorna { uid, tempPassword } para o nutricionista compartilhar a senha apenas uma vez.
+export async function createPatientAuthUser(email: string, name: string): Promise<{ uid: string | null; tempPassword: string }> {
+  const tempPassword = generateTempPassword();
   try {
     const secondaryApp = getApps().find((a) => a.name === 'SecondaryAuthApp') || initializeApp(firebaseConfig, 'SecondaryAuthApp');
     const secondaryAuth = getAuth(secondaryApp);
-    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, tempPassword);
     if (userCredential.user) {
       await updateProfile(userCredential.user, { displayName: name });
       await signOut(secondaryAuth);
-      return userCredential.user.uid;
+      return { uid: userCredential.user.uid, tempPassword };
     }
-    return null;
+    return { uid: null, tempPassword };
   } catch (error: any) {
     console.warn('Patient auth registration note:', error?.message || error);
-    return null;
+    return { uid: null, tempPassword };
   }
 }
 

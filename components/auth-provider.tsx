@@ -120,7 +120,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole(userRole);
         if (userRole) {
           localStorage.setItem('mockRole', userRole);
-          router.push(`/${userRole}`);
+          if (data.mustChangePassword) {
+            router.push('/patient/change-password');
+          } else {
+            router.push(`/${userRole}`);
+          }
         }
       } else {
         throw new Error('User data not found');
