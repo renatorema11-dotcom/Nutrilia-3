@@ -1,0 +1,87 @@
+{
+  "name": "NutriAli — Ali Ações (gateway de execução)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nutriali-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-ali",
+      "name": "Webhook do Ali",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-200, 300],
+      "webhookId": "REPLACE-WITH-GENERATED-ID"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://SEU-APP-NA-VERCEL.vercel.app/api/agent/action",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-webhook-secret",
+              "value": "SEU-SEGREDO-COMPARTILHADO"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "autodetect"
+            }
+          }
+        }
+      },
+      "id": "call-nutriali-api",
+      "name": "Executar Ação no NutriAli",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-ali",
+      "name": "Responder ao Ali",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    }
+  ],
+  "connections": {
+    "Webhook do Ali": {
+      "main": [
+        [
+          "Executar Ação no NutriAli"
+        ]
+      ]
+    },
+    "Executar Ação no NutriAli": {
+      "main": [
+        [
+          "Responder ao Ali"
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false,
+  "tags": [
+    {
+      "name": "nutriali"
+    }
+  ]
+}
