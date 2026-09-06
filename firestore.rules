@@ -25,6 +25,32 @@ service cloud.firestore {
       allow create, update, delete: if isNutritionist();
     }
 
+    // Food diary entries logged by the patient via Ali.
+    // Rules do NOT cascade into subcollections, so foodLogs needs its own match.
+    // The patient reads only their own entries; nutritionists read all.
+    // Writes are done exclusively by the Ali action API (Admin SDK), never by clients.
+    match /patients/{patientId}/foodLogs/{logId} {
+      allow read: if isSignedIn() && (request.auth.uid == patientId || isNutritionist());
+      allow write: if false;
+    }
+
+    // Appointment requests created by Ali on behalf of patients.
+    // Patients see their own requests; nutritionists read everything and can
+    // update (approve/reschedule). Creation/deletion only via Admin SDK.
+    match /appointmentRequests/{requestId} {
+      allow read: if isSignedIn()
+        && (resource.data.patientUid == request.auth.uid || isNutritionist());
+      allow update: if isNutritionist();
+      allow create, delete: if false;
+    }
+
+    // Audit trail of AI actions (Ali). Nutritionists can read it for
+    // transparency; NOBODY can write from clients, preserving log integrity.
+    match /aiActions/{actionId} {
+      allow read: if isNutritionist();
+      allow write: if false;
+    }
+
     // Everything else is denied by default.
     match /{document=**} {
       allow read, write: if false;
