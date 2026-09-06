@@ -5,7 +5,13 @@ import { useConversation, ConversationProvider } from '@elevenlabs/react';
 import { Button } from '@/components/ui';
 import { Mic, MicOff, Loader2, Bot } from 'lucide-react';
 
-function AgentInner({ agentId }: { agentId: string }) {
+function AgentInner({
+  agentId,
+  dynamicVariables,
+}: {
+  agentId: string;
+  dynamicVariables?: Record<string, string>;
+}) {
   const { startSession, endSession, status, isSpeaking } = useConversation();
 
   const handleToggleSession = async () => {
@@ -13,7 +19,9 @@ function AgentInner({ agentId }: { agentId: string }) {
       endSession();
     } else {
       try {
-        await startSession({ agentId });
+        // As dynamicVariables (ex.: patientUid) são enviadas na sessão e ficam
+        // disponíveis como {{patientUid}} nas ferramentas do agente no ElevenLabs.
+        await startSession({ agentId, dynamicVariables });
       } catch (error) {
         console.error('Failed to start session:', error);
       }
@@ -25,15 +33,15 @@ function AgentInner({ agentId }: { agentId: string }) {
       <div className="text-center space-y-2">
         <h3 className="font-semibold text-teal-900 flex items-center justify-center gap-2">
           <Bot className="w-5 h-5 text-teal-600" />
-          Assistente Virtual
+          Ali — Assistente de Voz
         </h3>
         <p className="text-sm text-slate-600">
-          Integração com ElevenLabs AI
+          Converse com o Ali: registre seu peso, anote refeições e peça consultas
         </p>
       </div>
 
       <div className="relative">
-        <div className={`absolute inset-0 bg-teal-500 rounded-full blur-xl opacity-20 transition-all duration-500 ${isSpeaking ? 'scale-150 opacity-40' : 'scale-100'}`} />
+        <div className={`absolute inset-0 bg-teal-500 rounded-full blur-xl opacity-20 transition-all duration-500 ${isSpeaking ? 'scale-150 opacity-40' : 'scale-100 opacity-20'}`} />
         <Button
           onClick={handleToggleSession}
           disabled={status === 'connecting'}
@@ -59,14 +67,20 @@ function AgentInner({ agentId }: { agentId: string }) {
       
       {status === 'connected' && (
         <div className="text-xs text-slate-500 animate-pulse">
-          {isSpeaking ? 'O agente está falando...' : 'Ouvindo...'}
+          {isSpeaking ? 'O Ali está falando...' : 'Ouvindo...'}
         </div>
       )}
     </div>
   );
 }
 
-export function ElevenLabsAgent({ agentId }: { agentId?: string }) {
+export function ElevenLabsAgent({
+  agentId,
+  dynamicVariables,
+}: {
+  agentId?: string;
+  dynamicVariables?: Record<string, string>;
+}) {
   // Se não houver agentId, mostramos um aviso para configuração
   if (!agentId) {
     return (
@@ -74,7 +88,7 @@ export function ElevenLabsAgent({ agentId }: { agentId?: string }) {
         <Bot className="w-8 h-8 text-slate-400 mx-auto" />
         <h3 className="font-semibold text-slate-700">Agente ElevenLabs não configurado</h3>
         <p className="text-sm text-slate-500">
-          Para ativar o assistente de voz, configure o <code className="bg-slate-200 px-1 py-0.5 rounded">Agent ID</code> do ElevenLabs no seu painel.
+          Para ativar o assistente de voz, configure a variável <code className="bg-slate-200 px-1 py-0.5 rounded">NEXT_PUBLIC_ELEVENLABS_AGENT_ID</code> no ambiente.
         </p>
       </div>
     );
@@ -82,7 +96,7 @@ export function ElevenLabsAgent({ agentId }: { agentId?: string }) {
 
   return (
     <ConversationProvider>
-      <AgentInner agentId={agentId} />
+      <AgentInner agentId={agentId} dynamicVariables={dynamicVariables} />
     </ConversationProvider>
   );
 }

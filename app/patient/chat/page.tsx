@@ -5,6 +5,7 @@ import { Card, CardContent, Input, Button } from '@/components/ui';
 import { Send, Bot, User } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData } from '@/lib/db';
+import { ElevenLabsAgent } from '@/components/elevenlabs-agent';
 
 interface Message {
   role: 'user' | 'ai';
@@ -90,14 +91,17 @@ export default function PatientChat() {
     }
   };
 
+  const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
+
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-[calc(100vh-8rem)] flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Chat Nutri IA</h1>
-        <p className="text-gray-600 mb-6">Tire dúvidas rápidas sobre sua alimentação.</p>
+        <p className="text-gray-600">Tire dúvidas rápidas sobre sua alimentação.</p>
       </div>
 
-      <Card className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+      <Card className="flex flex-col min-h-0">
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -142,6 +146,17 @@ export default function PatientChat() {
           </form>
         </div>
       </Card>
+
+      <div className="min-h-0">
+        <ElevenLabsAgent
+          agentId={agentId}
+          dynamicVariables={{
+            patientUid: user?.uid || '',
+            patientName: user?.displayName || '',
+          }}
+        />
+      </div>
+      </div>
     </div>
   );
 }
