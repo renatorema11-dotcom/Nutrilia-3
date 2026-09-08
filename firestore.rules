@@ -13,45 +13,78 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'nutritionist';
     }
 
-    // Each user can only read/write their own profile document.
+    // True quando a nutricionista logada é a responsável pelo paciente informado.
+    function ownsPatient(patientId) {
+      return isNutritionist()
+        && get(/databases/$(database)/documents/patients/$(patientId)).data.nutritionistId == request.auth.uid;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // users/{uid} — perfil de cada conta.
+    //
+    // LEITURA: só o próprio usuário.
+    // CRIAÇÃO: o próprio usuário (cadastro normal, role patient ou
+    //   nutritionist) OU uma nutricionista provisionando uma conta de
+    //   PACIENTE (fluxo "senha temporária" do painel).
+    // ATUALIZAÇÃO: só o próprio usuário, e SEM PODER MUDAR role ou email —
+    //   isso fecha a escalada de privilégio (paciente se auto-promovendo
+    //   a nutricionista editando o próprio documento).
+    // ─────────────────────────────────────────────────────────────
     match /users/{uid} {
-      allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.role in ['patient', 'nutritionist'];
+      allow create: if isNutritionist() && request.resource.data.role == 'patient';
+      allow update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email;
+      allow delete: if false;
     }
 
-    // Patient records: the patient can read only their own record.
-    // Nutritionists can read and manage all patient records.
+    // ─────────────────────────────────────────────────────────────
+    // patients/{patientId} — prontuário (dado sensível de saúde).
+    //
+    // MULTI-TENANT: a nutricionista só acessa pacientes ONDE
+    //   nutritionistId == o uid DELA. Nenhuma nutricionista vê pacientes
+    //   de outra. O paciente lê apenas o próprio prontuário.
+    // Escritas pelo cliente: só a nutricionista responsável. O Ali
+    //   (Admin SDK) passa por cima das regras por design.
+    // ─────────────────────────────────────────────────────────────
     match /patients/{patientId} {
-      allow read: if isSignedIn() && (request.auth.uid == patientId || isNutritionist());
-      allow create, update, delete: if isNutritionist();
+      allow read: if isSignedIn() && (request.auth.uid == patientId
+        || (isNutritionist() && resource.data.nutritionistId == request.auth.uid));
+      allow create: if isNutritionist() && request.resource.data.nutritionistId == request.auth.uid;
+      allow update, delete: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
     }
 
-    // Food diary entries logged by the patient via Ali.
-    // Rules do NOT cascade into subcollections, so foodLogs needs its own match.
-    // The patient reads only their own entries; nutritionists read all.
-    // Writes are done exclusively by the Ali action API (Admin SDK), never by clients.
+    // Diário alimentar (subcoleção — regras NÃO cascateam, precisa de match próprio).
+    // Paciente lê o próprio diário; a nutricionista RESPONSÁVEL lê o dele.
+    // Escrita só via Ali (Admin SDK).
     match /patients/{patientId}/foodLogs/{logId} {
-      allow read: if isSignedIn() && (request.auth.uid == patientId || isNutritionist());
+      allow read: if isSignedIn() && (request.auth.uid == patientId || ownsPatient(patientId));
       allow write: if false;
     }
 
-    // Appointment requests created by Ali on behalf of patients.
-    // Patients see their own requests; nutritionists read everything and can
-    // update (approve/reschedule). Creation/deletion only via Admin SDK.
+    // Pedidos de consulta criados pelo Ali em nome do paciente.
+    // Paciente vê os próprios; a nutricionista responsável lê e atualiza
+    // (aprovar/reagendar). Criar/apagar do cliente: nunca (só Admin SDK).
     match /appointmentRequests/{requestId} {
       allow read: if isSignedIn()
-        && (resource.data.patientUid == request.auth.uid || isNutritionist());
-      allow update: if isNutritionist();
+        && (resource.data.patientUid == request.auth.uid
+            || resource.data.nutritionistId == request.auth.uid);
+      allow update: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
       allow create, delete: if false;
     }
 
-    // Audit trail of AI actions (Ali). Nutritionists can read it for
-    // transparency; NOBODY can write from clients, preserving log integrity.
+    // Trilha de auditoria das ações do Ali.
+    // Só a nutricionista responsável pelo paciente lê; NINGUÉM escreve
+    // do cliente — a integridade do log é o que o torna auditorável.
     match /aiActions/{actionId} {
-      allow read: if isNutritionist();
+      allow read: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
       allow write: if false;
     }
 
-    // Everything else is denied by default.
+    // Todo o resto: negado por padrão.
     match /{document=**} {
       allow read, write: if false;
     }

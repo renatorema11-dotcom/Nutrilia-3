@@ -1,5 +1,5 @@
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db, createPatientAuthUser } from './firebase';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { db, createPatientAuthUser, auth } from './firebase';
 
 export interface Measurement {
   date: string;
@@ -28,6 +28,8 @@ export interface Plan {
 
 export interface Patient {
   id: string;
+  /** UID da nutricionista responsável — base do isolamento multi-tenant. */
+  nutritionistId: string;
   name: string;
   email: string;
   age: number;
@@ -67,7 +69,13 @@ function purgeLegacyLocalCache(): void {
 export async function getPatients(): Promise<Patient[]> {
   purgeLegacyLocalCache();
 
-  const querySnapshot = await getDocs(collection(db, 'patients'));
+  // Multi-tenant: só os pacientes desta nutricionista. As regras do Firestore
+  // também exigem esse filtro na query (resource.data.nutritionistId).
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return [];
+
+  const q = query(collection(db, 'patients'), where('nutritionistId', '==', currentUid));
+  const querySnapshot = await getDocs(q);
   const patients: Patient[] = [];
   querySnapshot.forEach((docSnap) => {
     patients.push({ id: docSnap.id, ...docSnap.data() } as Patient);
@@ -133,6 +141,7 @@ export async function createPatient(data: {
 
   const newPatient: Patient = {
     id: newId,
+    nutritionistId: auth.currentUser?.uid || '',
     name: data.name,
     email: data.email,
     age: Number(data.age),

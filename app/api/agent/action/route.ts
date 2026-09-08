@@ -54,10 +54,11 @@ interface AgentRequestBody {
   payload?: Record<string, unknown>;
 }
 
-async function audit(db: Firestore, patientUid: string, action: Action, payload: Record<string, unknown>, result: string) {
+async function audit(db: Firestore, patientUid: string, nutritionistId: string | null, action: Action, payload: Record<string, unknown>, result: string) {
   try {
     await db.collection('aiActions').add({
       patientUid,
+      nutritionistId,
       action,
       payload,
       result,
@@ -115,6 +116,7 @@ export async function POST(req: Request) {
       return speechError('Paciente não encontrado na base de dados.', 404);
     }
     const patient = patientSnap.data() as {
+      nutritionistId?: string;
       name?: string;
       weight?: number;
       height?: number;
@@ -127,7 +129,7 @@ export async function POST(req: Request) {
 
     switch (action) {
       case 'get_patient_data': {
-        await audit(db, patientUid, action, {}, 'dados retornados ao Ali');
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action, {}, 'dados retornados ao Ali');
         return speechResponse(
           `Dados de ${patient.name}: objetivo ${patient.objective || 'não informado'}, ` +
           `peso atual ${patient.weight ?? 'não informado'} kg, meta ${patient.targetWeight ?? 'não informada'} kg, ` +
@@ -159,7 +161,7 @@ export async function POST(req: Request) {
           measurements: FieldValue.arrayUnion(measurement),
         });
 
-        await audit(db, patientUid, action, { weight, bodyFat }, `medição registrada: ${weight} kg`);
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action, { weight, bodyFat }, `medição registrada: ${weight} kg`);
         return speechResponse(`Perfeito! Registrei ${weight} kg${bodyFat ? ` e ${bodyFat}% de gordura` : ''} no seu acompanhamento de hoje. ${patient.targetWeight ? `Faltam ${Math.max(0, Math.round((weight - patient.targetWeight) * 10) / 10)} kg para chegar na sua meta de ${patient.targetWeight} kg. ` : ''}Sua nutricionista vai ver essa evolução no painel dela.`);
       }
 
@@ -177,7 +179,7 @@ export async function POST(req: Request) {
           source: 'ali',
         });
 
-        await audit(db, patientUid, action, { description, mealTime }, 'refeição registrada no diário');
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action, { description, mealTime }, 'refeição registrada no diário');
         return speechResponse(`Anotado! Registrei no seu diário alimentar: ${description}${mealTime ? ` (${mealTime})` : ''}. Sua nutricionista acompanha tudo por lá.`);
       }
 
@@ -187,6 +189,7 @@ export async function POST(req: Request) {
 
         await db.collection('appointmentRequests').add({
           patientUid,
+          nutritionistId: (patient.nutritionistId as string) || null,
           patientName: patient.name || '',
           preferredDate: preferredDate || 'a combinar',
           notes,
@@ -195,7 +198,7 @@ export async function POST(req: Request) {
           source: 'ali',
         });
 
-        await audit(db, patientUid, action, { preferredDate, notes }, 'pedido de consulta criado');
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action, { preferredDate, notes }, 'pedido de consulta criado');
         return speechResponse(`Feito! Enviei o pedido de consulta${preferredDate ? ` para ${preferredDate}` : ''} para a sua nutricionista. Ela vai confirmar o horário com você.`);
       }
     }
