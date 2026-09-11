@@ -42,21 +42,29 @@ export function EvolutionChart() {
       } else {
         const savedData = localStorage.getItem('mockPatientData');
         if (savedData) {
-          const patient = JSON.parse(savedData);
-          const currentWeight = parseFloat(patient.weight);
-          
-          const savedHistory = localStorage.getItem('mockPatientHistory');
-          if (savedHistory) {
-            setData(JSON.parse(savedHistory));
-          } else {
-            const mockHistory = [
-              { month: 'Jan', weight: currentWeight + 3.2, fat: 24.5 },
-              { month: 'Fev', weight: currentWeight + 2.1, fat: 23.2 },
-              { month: 'Mar', weight: currentWeight + 0.8, fat: 22.0 },
-              { month: 'Abr', weight: currentWeight, fat: 21.1 },
-            ];
-            localStorage.setItem('mockPatientHistory', JSON.stringify(mockHistory));
-            setData(mockHistory);
+          try {
+            const patient = JSON.parse(savedData);
+            const currentWeight = parseFloat(patient.weight) || 70;
+            
+            const savedHistory = localStorage.getItem('mockPatientHistory');
+            if (savedHistory) {
+              try {
+                setData(JSON.parse(savedHistory));
+              } catch {
+                setData([]);
+              }
+            } else {
+              const mockHistory = [
+                { month: 'Jan', weight: currentWeight + 3.2, fat: 24.5 },
+                { month: 'Fev', weight: currentWeight + 2.1, fat: 23.2 },
+                { month: 'Mar', weight: currentWeight + 0.8, fat: 22.0 },
+                { month: 'Abr', weight: currentWeight, fat: 21.1 },
+              ];
+              localStorage.setItem('mockPatientHistory', JSON.stringify(mockHistory));
+              setData(mockHistory);
+            }
+          } catch (e) {
+            console.error('Error parsing patient data or history:', e);
           }
         }
       }

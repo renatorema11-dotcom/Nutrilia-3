@@ -136,3 +136,12 @@ font[style] {
   background: #94a3b8;
 }
 
+/* Tour highlight animation */
+.tour-highlight-active {
+  position: relative !important;
+  z-index: 40 !important;
+  box-shadow: 0 0 0 4px #0d9488, 0 20px 25px -5px rgba(0, 0, 0, 0.2) !important;
+  border-radius: 12px !important;
+  transition: all 0.3s ease-in-out !important;
+}
+

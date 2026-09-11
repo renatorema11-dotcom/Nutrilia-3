@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button, Input } from '@/components/ui';
-import { ArrowLeft, Clock, Wand2, CheckCircle2, Plus, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Wand2, CheckCircle2, Plus, Loader2, Trash2, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { getPatientById, updatePatient, deletePatient, Patient, Plan } from '@/lib/patients';
 
-export default function PatientProfile({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
+export default function PatientProfile({ params }: { params?: { id: string } }) {
+  const routeParams = useParams();
   const router = useRouter();
+  const patientId = (routeParams?.id as string) || params?.id || '';
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,10 +24,14 @@ export default function PatientProfile({ params }: { params: Promise<{ id: strin
   const [newFat, setNewFat] = useState('');
 
   useEffect(() => {
+    if (!patientId) {
+      setLoading(false);
+      return;
+    }
     async function load() {
       setLoading(true);
       try {
-        const data = await getPatientById(resolvedParams.id);
+        const data = await getPatientById(patientId);
         if (data) {
           setPatient(data);
           if (data.currentPlan?.status === 'draft') {
@@ -40,7 +45,7 @@ export default function PatientProfile({ params }: { params: Promise<{ id: strin
       }
     }
     load();
-  }, [resolvedParams.id]);
+  }, [patientId]);
 
   if (loading) {
     return (
@@ -182,6 +187,12 @@ export default function PatientProfile({ params }: { params: Promise<{ id: strin
             {planStatus === 'approved' && <Badge variant="success">Plano Ativo</Badge>}
             {planStatus === 'draft' && <Badge variant="warning">Rascunho Pendente</Badge>}
             {planStatus === 'none' && <Badge variant="default">Sem Plano</Badge>}
+            <Link href={`/nutritionist/chat?patientId=${patient.id}`}>
+              <Button variant="outline" className="text-xs h-8 px-3 border-teal-200 text-teal-700 hover:bg-teal-50 flex items-center gap-1.5 font-semibold">
+                <MessageSquare className="w-3.5 h-3.5 text-teal-600" />
+                Chat
+              </Button>
+            </Link>
             <button
               onClick={handleDeletePatient}
               className="p-2 text-red-500 hover:bg-red-50 rounded-lg text-xs flex items-center gap-1 border border-red-200 transition-colors"

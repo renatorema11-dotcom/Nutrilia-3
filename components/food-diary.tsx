@@ -33,7 +33,6 @@ export function FoodDiary() {
   const [todayMeals, setTodayMeals] = useState<{ name: string; time: string; items: string[] }[]>([]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
     async function loadData() {
       if (user) {
@@ -300,7 +299,7 @@ export function FoodDiary() {
                           : "hover:bg-slate-50 text-slate-600 border-slate-200"
                       )}
                     >
-                      <Check className="w-3.5 h-3.5 mr-1" /> Segui
+                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Refeição realizada
                     </button>
                     <button
                       onClick={() => handleStatusUpdate(meal.name, 'different')}

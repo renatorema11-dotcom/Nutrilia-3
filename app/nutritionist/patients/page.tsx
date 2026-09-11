@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { Search, ChevronRight, UserPlus, Users, Loader2 } from 'lucide-react';
+import { Search, ChevronRight, UserPlus, Users, Loader2, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { getPatients, Patient } from '@/lib/patients';
 import { AddPatientModal } from '@/components/add-patient-modal';
@@ -34,8 +34,8 @@ export default function PatientsList() {
 
   const filteredPatients = patients.filter(
     (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.email.toLowerCase().includes(search.toLowerCase())
+      (p.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
+      (p.email || '').toLowerCase().includes((search || '').toLowerCase())
   );
 
   return (
@@ -94,18 +94,20 @@ export default function PatientsList() {
           ) : (
             <div className="divide-y divide-gray-100">
               {filteredPatients.map((patient) => (
-                <Link
+                <div
                   key={patient.id}
-                  href={`/nutritionist/patients/${patient.id}`}
                   className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                 >
-                  <div>
-                    <p className="font-medium text-gray-900">{patient.name}</p>
-                    <p className="text-sm text-gray-500">
+                  <Link
+                    href={`/nutritionist/patients/${patient.id}`}
+                    className="flex-1 min-w-0 pr-4 group"
+                  >
+                    <p className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors">{patient.name}</p>
+                    <p className="text-sm text-gray-500 truncate">
                       {patient.email} • {patient.age} anos • {patient.objective}
                     </p>
-                  </div>
-                  <div className="flex items-center gap-4">
+                  </Link>
+                  <div className="flex items-center gap-3 shrink-0">
                     {patient.currentPlan ? (
                       patient.currentPlan.status === 'approved' ? (
                         <Badge variant="success">Plano Ativo</Badge>
@@ -115,9 +117,23 @@ export default function PatientsList() {
                     ) : (
                       <Badge variant="default">Sem Plano</Badge>
                     )}
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                    <Link
+                      href={`/nutritionist/chat?patientId=${patient.id}`}
+                      className="p-1.5 text-teal-700 hover:bg-teal-50 rounded-lg border border-teal-200 transition-colors flex items-center gap-1 text-xs font-semibold"
+                      title="Abrir chat com paciente"
+                    >
+                      <MessageSquare className="w-4 h-4 text-teal-600" />
+                      <span className="hidden sm:inline">Chat</span>
+                    </Link>
+                    <Link
+                      href={`/nutritionist/patients/${patient.id}`}
+                      className="p-1 text-gray-400 hover:text-gray-600"
+                      title="Abrir prontuário"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </Link>
                   </div>
-                </Link>
+                </div>
               ))}
 
               {filteredPatients.length === 0 && patients.length > 0 && (

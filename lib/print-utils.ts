@@ -98,7 +98,8 @@ export function handlePrintOrDownload(
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${documentTitle.toLowerCase().replace(/\s+/g, '_')}.txt`;
+    const safeTitle = (documentTitle || 'documento').toLowerCase().replace(/\s+/g, '_');
+    a.download = `${safeTitle}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

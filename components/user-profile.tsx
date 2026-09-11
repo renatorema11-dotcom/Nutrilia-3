@@ -9,11 +9,12 @@ import { db, updateProfile } from '@/lib/firebase';
 import Image from 'next/image';
 
 export function UserProfile() {
-  const { user, role } = useAuth();
+  const { user, role, updateUserProfilePhoto } = useAuth();
   const [name, setName] = useState(user?.displayName || '');
   const [photoURL, setPhotoURL] = useState(user?.photoURL || '');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('Salvo!');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [prevUser, setPrevUser] = useState(user);
@@ -23,14 +24,66 @@ export function UserProfile() {
     setPhotoURL(user?.photoURL || '');
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  const compressImage = (file: File, maxDim = 350, quality = 0.85): Promise<string> => {
+    return new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoURL(reader.result as string);
+      reader.onload = (e) => {
+        const img = document.createElement('img');
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          } else {
+            resolve(e.target?.result as string);
+          }
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => {
+        resolve('');
       };
       reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setLoading(true);
+      setSuccess(false);
+      try {
+        const compressedDataUrl = await compressImage(file, 350, 0.85);
+        if (!compressedDataUrl) return;
+        setPhotoURL(compressedDataUrl);
+        if (user && updateUserProfilePhoto) {
+          await updateUserProfilePhoto(compressedDataUrl, name);
+          setStatusMessage('Foto de perfil definida com sucesso!');
+          setSuccess(true);
+          setTimeout(() => setSuccess(false), 3500);
+        }
+      } catch (err) {
+        console.error('Error updating profile photo:', err);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -42,22 +95,14 @@ export function UserProfile() {
     setSuccess(false);
 
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        displayName: name,
-        photoURL: photoURL
-      });
-      
-      await updateProfile(user, {
-        displayName: name,
-        photoURL: photoURL
-      });
-      
+      if (updateUserProfilePhoto) {
+        await updateUserProfilePhoto(photoURL, name);
+      }
+      setStatusMessage('Perfil salvo com sucesso!');
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
-        window.location.reload();
-      }, 1500);
+      }, 3500);
     } catch (error) {
       console.error('Error updating profile:', error);
     } finally {
@@ -87,6 +132,7 @@ export function UserProfile() {
                     fill 
                     className="object-cover" 
                     referrerPolicy="no-referrer"
+                    unoptimized
                   />
                 ) : (
                   <UserIcon className="w-16 h-16 text-slate-300" />
@@ -95,6 +141,7 @@ export function UserProfile() {
                 <div 
                   className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                   onClick={() => fileInputRef.current?.click()}
+                  title="Clique para enviar nova foto de perfil"
                 >
                   <Camera className="w-8 h-8 text-white" />
                 </div>
@@ -108,9 +155,15 @@ export function UserProfile() {
                 className="hidden" 
               />
             </div>
-            <p className="text-sm text-slate-500">
-              Clique na imagem para alterar
-            </p>
+            
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-full transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              {hasValidPhoto ? 'Alterar Foto de Perfil' : 'Adicionar Foto de Perfil'}
+            </button>
           </div>
 
           <div className="space-y-4">
@@ -168,7 +221,7 @@ export function UserProfile() {
               ) : success ? (
                 <>
                   <Check className="w-5 h-5" />
-                  Salvo!
+                  {statusMessage}
                 </>
               ) : (
                 <>

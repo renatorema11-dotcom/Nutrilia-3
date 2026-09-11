@@ -3,7 +3,7 @@
 import { useAuth } from '@/components/auth-provider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { LayoutDashboard, Users, MessageSquareText, LogOut, Apple, User } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquareText, MessageSquare, LogOut, Apple, User } from 'lucide-react';
 import Link from 'next/link';
 import Script from 'next/script';
 import Image from 'next/image';
@@ -25,6 +25,7 @@ export default function NutritionistLayout({ children }: { children: React.React
   const navigation = [
     { name: 'Dashboard', href: '/nutritionist', icon: LayoutDashboard },
     { name: 'Pacientes', href: '/nutritionist/patients', icon: Users },
+    { name: 'Chat com Pacientes', href: '/nutritionist/chat', icon: MessageSquare },
     { name: 'Assistente IA', href: '/nutritionist/assistant', icon: MessageSquareText },
     { name: 'Meu Perfil', href: '/nutritionist/profile', icon: User },
   ];
@@ -66,7 +67,7 @@ export default function NutritionistLayout({ children }: { children: React.React
             <div className="flex items-center gap-3 p-3 bg-white/50 rounded-xl border border-white/60 shadow-sm">
               <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200 shrink-0">
                 {user.photoURL && user.photoURL.trim() ? (
-                  <Image src={user.photoURL} alt={user.displayName || 'Usuário'} width={40} height={40} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <Image src={user.photoURL} alt={user.displayName || 'Usuário'} width={40} height={40} className="w-full h-full object-cover" referrerPolicy="no-referrer" unoptimized />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-teal-100 text-teal-700 font-bold">
                     {user.displayName?.charAt(0).toUpperCase() || 'U'}

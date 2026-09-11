@@ -60,11 +60,11 @@ export function LanguageSelector({ className = '' }: { className?: string }) {
 
   // Sync initial language from client storage after mount to prevent hydration mismatch
   useEffect(() => {
-    const savedCode = localStorage.getItem('app_language') || getCookie('googtrans')?.split('/').pop();
-    if (savedCode) {
-      const found = LANGUAGES.find((l) => l.code.toLowerCase() === savedCode.toLowerCase());
+    const rawSaved = localStorage.getItem('app_language') || getCookie('googtrans')?.split('/')?.pop();
+    if (rawSaved && typeof rawSaved === 'string') {
+      const savedCode = rawSaved.toLowerCase();
+      const found = LANGUAGES.find((l) => (l.code || '').toLowerCase() === savedCode);
       if (found) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedLang(found);
       }
     }
@@ -88,19 +88,23 @@ export function LanguageSelector({ className = '' }: { className?: string }) {
     if (typeof document === 'undefined') return;
 
     const initWidget = () => {
-      // @ts-ignore
-      if (window.google && window.google.translate && window.google.translate.TranslateElement) {
-        if (!document.querySelector('.goog-te-combo')) {
-          // @ts-ignore
-          new window.google.translate.TranslateElement(
-            {
-              pageLanguage: 'pt',
-              includedLanguages: LANGUAGES.map((l) => l.code).join(','),
-              autoDisplay: false,
-            },
-            'google_translate_element'
-          );
+      try {
+        // @ts-ignore
+        if (window.google && window.google.translate && window.google.translate.TranslateElement) {
+          if (!document.querySelector('.goog-te-combo')) {
+            // @ts-ignore
+            new window.google.translate.TranslateElement(
+              {
+                pageLanguage: 'pt',
+                includedLanguages: LANGUAGES.map((l) => l.code).join(','),
+                autoDisplay: false,
+              },
+              'google_translate_element'
+            );
+          }
         }
+      } catch (err) {
+        console.warn('Google translate init warning:', err);
       }
     };
 
@@ -112,6 +116,9 @@ export function LanguageSelector({ className = '' }: { className?: string }) {
       script.id = 'google-translate-script';
       script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
       script.async = true;
+      script.onerror = () => {
+        console.warn('Google translate script failed to load.');
+      };
       document.body.appendChild(script);
     } else {
       initWidget();
@@ -170,11 +177,12 @@ export function LanguageSelector({ className = '' }: { className?: string }) {
     }
   };
 
+  const queryLower = (searchQuery || '').toLowerCase();
   const filteredLanguages = LANGUAGES.filter(
     (l) =>
-      l.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.nativeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.code.toLowerCase().includes(searchQuery.toLowerCase())
+      (l.name || '').toLowerCase().includes(queryLower) ||
+      (l.nativeName || '').toLowerCase().includes(queryLower) ||
+      (l.code || '').toLowerCase().includes(queryLower)
   );
 
   return (

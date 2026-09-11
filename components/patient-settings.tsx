@@ -28,7 +28,6 @@ export function PatientSettings({
 
   useEffect(() => {
     if (patientData) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         name: patientData.name || '',
         age: patientData.age || '',

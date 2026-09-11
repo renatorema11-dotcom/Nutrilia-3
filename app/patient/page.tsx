@@ -70,13 +70,33 @@ export default function PatientDashboard() {
         }
       } else {
         const savedPlans = localStorage.getItem('mockSavedPlans');
-        if (savedPlans && isValidPlanFormat(savedPlans) && JSON.parse(savedPlans).length > 0) {
-          setHasPlan(true);
+        if (savedPlans && isValidPlanFormat(savedPlans)) {
+          try {
+            const parsedPlans = JSON.parse(savedPlans);
+            if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
+              setHasPlan(true);
+            }
+          } catch (e) {
+            console.error(e);
+          }
         }
 
         const saved = localStorage.getItem('mockPatientData');
         if (saved) {
-          setPatientData(JSON.parse(saved));
+          try {
+            setPatientData(JSON.parse(saved));
+          } catch (e) {
+            console.error(e);
+            setPatientData({
+              name: 'Paciente',
+              age: 30,
+              weight: 70,
+              height: 168,
+              initialWeight: 70,
+              targetWeight: 65,
+              objective: 'Saúde e Bem-Estar'
+            });
+          }
         } else {
           setPatientData({
             name: 'Paciente',

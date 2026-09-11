@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User, db, createUserWithEmailAndPassword, signInWithEmailAndPassword } from '@/lib/firebase';
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export type UserRole = 'patient' | 'nutritionist' | null;
@@ -15,6 +15,7 @@ interface AuthContextType {
   loginWithEmail: (email: string, password: string) => Promise<void>;
   registerWithEmail: (email: string, password: string, name: string, role: UserRole, extraData?: any) => Promise<void>;
   logout: () => void;
+  updateUserProfilePhoto: (newPhotoURL: string, newDisplayName?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,7 +29,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const savedRole = localStorage.getItem('mockRole') as UserRole;
     if (savedRole && savedRole !== role) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRole(savedRole);
     }
 
@@ -198,6 +198,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateUserProfilePhoto = async (newPhotoURL: string, newDisplayName?: string) => {
+    const currentUser = auth.currentUser || user;
+    if (!currentUser) return;
+
+    const nameToSave = newDisplayName !== undefined && newDisplayName.trim() !== '' 
+      ? newDisplayName 
+      : (currentUser.displayName || '');
+
+    try {
+      if (auth.currentUser) {
+        try {
+          await updateProfile(auth.currentUser, {
+            photoURL: newPhotoURL,
+            displayName: nameToSave
+          });
+        } catch (profileErr: any) {
+          // If photoURL is too long for Firebase Auth profile attribute (auth/invalid-profile-attribute),
+          // fall back to updating displayName only on Auth user object while storing photoURL in Firestore
+          console.warn('Firebase Auth updateProfile photoURL warning:', profileErr?.message || profileErr);
+          await updateProfile(auth.currentUser, {
+            displayName: nameToSave
+          }).catch(() => {});
+        }
+      }
+
+      const userRef = doc(db, 'users', currentUser.uid);
+      await setDoc(userRef, {
+        photoURL: newPhotoURL,
+        displayName: nameToSave,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      if (role === 'patient') {
+        const patientRef = doc(db, 'patients', currentUser.uid);
+        await setDoc(patientRef, {
+          photoURL: newPhotoURL,
+          name: nameToSave
+        }, { merge: true }).catch(() => {});
+      }
+
+      setUser((prev) => {
+        if (!prev) return null;
+        return Object.assign(Object.create(Object.getPrototypeOf(prev)), prev, {
+          photoURL: newPhotoURL,
+          displayName: nameToSave
+        });
+      });
+    } catch (err) {
+      console.error('Error updating profile photo:', err);
+      throw err;
+    }
+  };
+
   const logout = () => {
     signOut(auth).catch((err) => console.error('Sign out error:', err));
     setUser(null);
@@ -210,7 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ role, user, login, loginWithGoogle, loginWithEmail, registerWithEmail, logout }}>
+    <AuthContext.Provider value={{ role, user, login, loginWithGoogle, loginWithEmail, registerWithEmail, logout, updateUserProfilePhoto }}>
       {children}
     </AuthContext.Provider>
   );

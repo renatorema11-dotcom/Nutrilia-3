@@ -3,7 +3,7 @@
 import { useAuth } from '@/components/auth-provider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { LayoutDashboard, FileText, Activity, MessageSquare, LogOut, Apple, User } from 'lucide-react';
+import { LayoutDashboard, FileText, Activity, MessageSquare, LogOut, Apple, User, Stethoscope } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { LanguageSelector } from '@/components/language-selector';
@@ -25,6 +25,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     { name: 'Dashboard', href: '/patient', icon: LayoutDashboard },
     { name: 'Meu Plano', href: '/patient/plan', icon: FileText },
     { name: 'Meus Dados', href: '/patient/data', icon: Activity },
+    { name: 'Meu Nutricionista', href: '/patient/nutritionist', icon: Stethoscope },
     { name: 'Chat Nutri IA', href: '/patient/chat', icon: MessageSquare },
     { name: 'Meu Perfil', href: '/patient/profile', icon: User },
   ];
@@ -66,7 +67,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
             <div className="flex items-center gap-3 p-3 bg-white/50 rounded-xl border border-white/60 shadow-sm">
               <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-200 shrink-0">
                 {user.photoURL && user.photoURL.trim() ? (
-                  <Image src={user.photoURL} alt={user.displayName || 'Usuário'} width={40} height={40} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <Image src={user.photoURL} alt={user.displayName || 'Usuário'} width={40} height={40} className="w-full h-full object-cover" referrerPolicy="no-referrer" unoptimized />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-teal-100 text-teal-700 font-bold">
                     {user.displayName?.charAt(0).toUpperCase() || 'U'}

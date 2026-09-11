@@ -17,7 +17,6 @@ export function MacronutrientsChart() {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
     // Optional: Load data from the current plan or user settings if available
   }, []);

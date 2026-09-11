@@ -15,7 +15,6 @@ export function WaterTracker() {
   const { user } = useAuth();
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
     async function loadData() {
       if (user) {
