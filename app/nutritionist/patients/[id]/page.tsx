@@ -6,11 +6,12 @@ import { ArrowLeft, Clock, Wand2, CheckCircle2, Plus, Loader2, Trash2, MessageSq
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { getPatientById, updatePatient, deletePatient, Patient, Plan } from '@/lib/patients';
+import { AliFoodLogs } from '@/components/ali-food-logs';
 
-export default function PatientProfile({ params }: { params?: { id: string } }) {
+export default function PatientProfile() {
   const routeParams = useParams();
   const router = useRouter();
-  const patientId = (routeParams?.id as string) || params?.id || '';
+  const patientId = (routeParams?.id as string) || '';
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,6 +174,7 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
 
   return (
     <div className="space-y-6">
+      <AliFoodLogs patientUid={patient.id} />
       <div>
         <Link href="/nutritionist/patients" className="inline-flex items-center text-sm font-medium text-emerald-600 hover:text-emerald-700 mb-4">
           <ArrowLeft className="h-4 w-4 mr-1" />

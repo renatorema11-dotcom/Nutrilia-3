@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { auth, onAuthStateChanged } from '@/lib/firebase';
 import { useConversation, ConversationProvider } from '@elevenlabs/react';
 import { Button } from '@/components/ui';
 import { Mic, MicOff, Loader2, Bot } from 'lucide-react';
@@ -14,17 +15,53 @@ function AgentInner({
 }) {
   const { startSession, endSession, status, isSpeaking } = useConversation();
 
+  const [sessionError, setSessionError] = useState('');
+  const [starting, setStarting] = useState(false);
+  const sessionUid = useRef<string | null>(null);
+  const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, current => {
+      if (sessionUid.current && current?.uid !== sessionUid.current) {
+        void endSession();
+        sessionUid.current = null;
+      }
+    });
+    return () => { unsubscribe(); if (expiryTimer.current) clearTimeout(expiryTimer.current); };
+  }, [endSession]);
+
   const handleToggleSession = async () => {
     if (status === 'connected') {
-      endSession();
+      await endSession();
+      sessionUid.current = null;
+      if (expiryTimer.current) clearTimeout(expiryTimer.current);
     } else {
+      setSessionError('');
+      setStarting(true);
       try {
-        // As dynamicVariables (ex.: patientUid) são enviadas na sessão e ficam
-        // disponíveis como {{patientUid}} nas ferramentas do agente no ElevenLabs.
-        await startSession({ agentId, dynamicVariables });
-      } catch (error) {
-        console.error('Failed to start session:', error);
-      }
+        const current = auth.currentUser;
+        if (!current || current.isAnonymous) throw new Error('Entre com sua conta de paciente para conversar com a Ali.');
+        const token = await current.getIdToken(true);
+        if (auth.currentUser?.uid !== current.uid) throw new Error('Sua sessão mudou. Entre novamente.');
+        sessionUid.current = current.uid;
+        await startSession({ agentId, dynamicVariables: {
+          ...dynamicVariables, patientUid: current.uid, secret__patientToken: token,
+        } });
+        if (auth.currentUser?.uid !== current.uid) {
+          await endSession();
+          throw new Error('Sessão alterada durante a conexão.');
+        }
+        // O ID token expira em uma hora. Encerrar antes disso exige nova autenticação.
+        if (expiryTimer.current) clearTimeout(expiryTimer.current);
+        expiryTimer.current = setTimeout(() => {
+          void endSession();
+          sessionUid.current = null;
+          setSessionError('Inicie uma nova conversa para renovar sua sessão.');
+        }, 50 * 60 * 1000);
+      } catch {
+        sessionUid.current = null;
+        setSessionError('Não foi possível iniciar a Ali. Entre com sua conta de paciente e tente novamente.');
+      } finally { setStarting(false); }
     }
   };
 
@@ -44,7 +81,7 @@ function AgentInner({
         <div className={`absolute inset-0 bg-teal-500 rounded-full blur-xl opacity-20 transition-all duration-500 ${isSpeaking ? 'scale-150 opacity-40' : 'scale-100 opacity-20'}`} />
         <Button
           onClick={handleToggleSession}
-          disabled={status === 'connecting'}
+          disabled={starting || status === 'connecting'}
           className={`relative h-16 w-16 rounded-full flex items-center justify-center transition-all ${
             status === 'connected' 
               ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' 
@@ -65,6 +102,7 @@ function AgentInner({
         Status: {status === 'connected' ? 'Conectado' : status === 'connecting' ? 'Conectando...' : 'Desconectado'}
       </div>
       
+      {sessionError && <p role="alert" className="text-sm text-red-700">{sessionError}</p>}
       {status === 'connected' && (
         <div className="text-xs text-slate-500 animate-pulse">
           {isSpeaking ? 'O Ali está falando...' : 'Ouvindo...'}

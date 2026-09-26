@@ -30,6 +30,11 @@ export interface Patient {
   id: string;
   /** UID da nutricionista responsável — base do isolamento multi-tenant. */
   nutritionistId: string;
+  nutritionistName?: string;
+  nutritionistEmail?: string;
+  nutritionistCRN?: string;
+  nutritionistPhoto?: string;
+  nutritionistSpecialty?: string;
   name: string;
   email: string;
   age: number;
@@ -46,6 +51,58 @@ export interface Patient {
   pastPlans?: Plan[];
   /** Senha temporária gerada no cadastro — NÃO é persistida no Firestore. Exibida uma única vez ao nutricionista. */
   tempPassword?: string;
+}
+
+export interface RegisteredNutritionist {
+  id: string;
+  displayName: string;
+  email: string;
+  crn?: string;
+  specialty?: string;
+  photoURL?: string;
+  phone?: string;
+  bio?: string;
+}
+
+export async function getRegisteredNutritionists(): Promise<RegisteredNutritionist[]> {
+  try {
+    const q = query(collection(db, 'users'), where('role', '==', 'nutritionist'));
+    const snap = await getDocs(q);
+    const list: RegisteredNutritionist[] = [];
+    snap.forEach((docSnap) => {
+      const data = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        displayName: data.displayName || data.name || 'Nutricionista',
+        email: data.email || '',
+        crn: data.crn || '',
+        specialty: data.specialty || 'Nutrição Clínica',
+        photoURL: data.photoURL || '',
+        phone: data.phone || '',
+        bio: data.bio || '',
+      });
+    });
+    return list;
+  } catch (err) {
+    console.error('Erro ao buscar nutricionistas:', err);
+    return [];
+  }
+}
+
+export async function linkNutritionistToPatient(patientUid: string, nutritionist: RegisteredNutritionist): Promise<void> {
+  const updates = {
+    nutritionistId: nutritionist.id,
+    nutritionistName: nutritionist.displayName,
+    nutritionistEmail: nutritionist.email,
+    nutritionistCRN: nutritionist.crn || '',
+    nutritionistPhoto: nutritionist.photoURL || '',
+    nutritionistSpecialty: nutritionist.specialty || '',
+  };
+  await setDoc(doc(db, 'patients', patientUid), removeUndefined(updates), { merge: true });
+  await setDoc(doc(db, 'users', patientUid), removeUndefined({
+    nutritionistId: nutritionist.id,
+    nutritionistName: nutritionist.displayName,
+  }), { merge: true });
 }
 
 /**
