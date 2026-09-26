@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { AliFoodLogs } from './ali-food-logs';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
 
@@ -209,6 +210,7 @@ export function FoodDiary() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 mt-2">
+        {user && <AliFoodLogs patientUid={user.uid} />}
         {!hasPlan && (
           <div className="text-center py-6">
             <p className="text-slate-600 text-sm">Aguardando seu plano alimentar...</p>

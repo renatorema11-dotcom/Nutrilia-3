@@ -1,36 +1,74 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useAuth } from '@/components/auth-provider';
-import { Card, CardContent, CardHeader, CardTitle, Button, Input } from '@/components/ui';
+import { Card, CardContent, Button, Input } from '@/components/ui';
 import { Apple } from 'lucide-react';
 import Link from 'next/link';
 import { LanguageSelector } from '@/components/language-selector';
+
+function loginErrorMessage(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error
+    && typeof error.code === 'string' ? error.code : '';
+  switch (code) {
+    case 'auth/unauthorized-domain':
+      return 'Este endereço ainda não está autorizado para entrar com Google. Contate o responsável pelo aplicativo. (auth/unauthorized-domain)';
+    case 'auth/popup-blocked':
+      return 'O navegador bloqueou a janela do Google. Permita pop-ups para este aplicativo e tente novamente. (auth/popup-blocked)';
+    case 'auth/popup-closed-by-user':
+      return 'A janela do Google foi fechada antes de concluir o login. Tente novamente. Se ela fechar sozinha, abra este mesmo endereço no Chrome e tente por lá. (auth/popup-closed-by-user)';
+    case 'auth/cancelled-popup-request':
+      return 'Outra tentativa de login estava aberta. Feche as janelas de login e tente uma vez novamente.';
+    case 'auth/operation-not-allowed':
+      return 'Esta forma de login não está habilitada no aplicativo. Contate o responsável. (auth/operation-not-allowed)';
+    case 'auth/network-request-failed':
+    case 'unavailable':
+      return 'Não foi possível conectar ao serviço de login ou carregar seu perfil. Confira a conexão e tente novamente.';
+    case 'permission-denied':
+      return 'Sua conta foi autenticada, mas o aplicativo não conseguiu acessar seu perfil. O responsável precisa verificar as permissões do perfil. (permission-denied)';
+    case 'auth/account-exists-with-different-credential':
+      return 'Esta conta já usa outra forma de entrada. Entre pelo método usado no cadastro.';
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+    case 'auth/invalid-email':
+      return 'Não foi possível entrar com esses dados. Confira o email e a senha.';
+    case 'auth/too-many-requests':
+      return 'Houve muitas tentativas. Aguarde um pouco antes de tentar novamente.';
+    case 'auth/user-disabled':
+      return 'Esta conta está desativada. Contate o responsável pelo aplicativo.';
+    default:
+      return 'Não foi possível concluir o login. Tente novamente ou contate o responsável pelo aplicativo.'
+        + (/^(auth\/[a-z-]+|[a-z-]+)$/.test(code) ? ` (${code})` : '');
+  }
+}
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-  const { role, login, loginWithGoogle, loginWithEmail } = useAuth();
-  const router = useRouter();
+  const [loginError, setLoginError] = useState('');
+  const { loginWithGoogle, loginWithEmail } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading || isLoadingGoogle) return;
+    setLoginError('');
     setIsLoading(true);
     
     try {
       await loginWithEmail(email, password);
     } catch (error) {
-      console.error('Login error:', error);
-      alert('Email ou senha inválidos.');
+      setLoginError(loginErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
+    if (isLoading || isLoadingGoogle) return;
+    setLoginError('');
     try {
       setIsLoadingGoogle(true);
       // Novos usuários Google entram como paciente; nutricionistas se cadastram
@@ -38,7 +76,7 @@ export default function Login() {
       // o papel salvo no próprio documento.
       await loginWithGoogle('patient');
     } catch (error) {
-      console.error('Google Sign-In Error:', error);
+      setLoginError(loginErrorMessage(error));
     } finally {
       setIsLoadingGoogle(false);
     }
@@ -64,10 +102,15 @@ export default function Login() {
 
         <Card>
           <CardContent className="pt-6 space-y-6">
+            {loginError && (
+              <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                {loginError}
+              </p>
+            )}
             <Button
               type="button"
               variant="outline"
-              disabled={isLoadingGoogle}
+              disabled={isLoadingGoogle || isLoading}
               onClick={handleGoogleSignIn}
               className="w-full flex items-center justify-center gap-2 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 h-11 font-medium shadow-sm"
             >
@@ -118,8 +161,8 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
               />
-              <Button type="submit" className="w-full">
-                Entrar
+              <Button type="submit" disabled={isLoading || isLoadingGoogle} className="w-full">
+                {isLoading ? 'Entrando...' : 'Entrar'}
               </Button>
             </form>
           </CardContent>
