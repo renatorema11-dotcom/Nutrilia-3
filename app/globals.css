@@ -14,8 +14,61 @@
   --color-teal-900: #1c5341;
 }
 
+:root {
+  /* Altura ocupada pelas barras do painel no celular (superior + inferior + respiros).
+     Telas de altura fixa, como os chats, usam 100dvh - --app-chrome. */
+  --app-chrome: calc(env(safe-area-inset-top) + env(safe-area-inset-bottom) + 11rem + 2px);
+}
+
 body {
   background-color: #f0f9ff;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iPhone: campos com fonte menor que 16px dão zoom automático ao tocar. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-drawer-in {
+  animation: drawer-in 0.22s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-drawer-in,
+  .animate-fade-in {
+    animation: none;
+  }
+}
+
+/* Botão flutuante da ElevenLabs (painel da nutricionista): no celular fica acima da barra inferior.
+   O próprio elemento ocupa a tela em position: fixed; reduzir o "bottom" sobe o conteúdo dele. */
+@media (max-width: 1023px) {
+  elevenlabs-convai {
+    bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
+  }
+
+  elevenlabs-convai.convai-hide-mobile {
+    display: none;
+  }
 }
 
 .mesh-bg {

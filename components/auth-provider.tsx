@@ -10,6 +10,10 @@ export type UserRole = 'patient' | 'nutritionist' | null;
 interface AuthContextType {
   role: UserRole;
   user: User | null;
+  /** true depois que o Firebase informou se há sessão (e o papel foi lido). */
+  ready: boolean;
+  /** O perfil pede troca da senha temporária. */
+  mustChangePassword: boolean;
   login: (role: UserRole, isNewUser?: boolean) => void;
   loginWithGoogle: (preferredRole?: UserRole) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
@@ -23,12 +27,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<UserRole>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
+    // O papel salvo no navegador é só um palpite inicial; quem confirma é o Firebase.
     const savedRole = localStorage.getItem('mockRole') as UserRole;
-    if (savedRole && savedRole !== role) {
+    if (savedRole) {
       setRole(savedRole);
     }
 
@@ -40,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             const data = userSnap.data();
+            setMustChangePassword(!!data.mustChangePassword);
             if (data.role) {
               setRole(data.role as UserRole);
               localStorage.setItem('mockRole', data.role);
@@ -48,11 +56,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           console.error('Error fetching user document:', err);
         }
+      } else {
+        // Sem sessão no Firebase, o papel salvo no navegador não vale mais.
+        setRole(null);
+        setMustChangePassword(false);
+        localStorage.removeItem('mockRole');
       }
+      setReady(true);
     });
 
     return () => unsubscribe();
-  }, [role]);
+  }, []);
 
   const login = (newRole: UserRole, isNewUser?: boolean) => {
     setRole(newRole);
@@ -263,7 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ role, user, login, loginWithGoogle, loginWithEmail, registerWithEmail, logout, updateUserProfilePhoto }}>
+    <AuthContext.Provider value={{ role, user, ready, mustChangePassword, login, loginWithGoogle, loginWithEmail, registerWithEmail, logout, updateUserProfilePhoto }}>
       {children}
     </AuthContext.Provider>
   );

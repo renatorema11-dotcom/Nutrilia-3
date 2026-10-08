@@ -301,7 +301,9 @@ export function FoodDiary() {
                           : "hover:bg-slate-50 text-slate-600 border-slate-200"
                       )}
                     >
-                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Refeição realizada
+                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0" />
+                      <span className="sm:hidden">Realizada</span>
+                      <span className="hidden sm:inline">Refeição realizada</span>
                     </button>
                     <button
                       onClick={() => handleStatusUpdate(meal.name, 'different')}

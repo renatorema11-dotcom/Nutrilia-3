@@ -318,7 +318,7 @@ export default function PatientDashboard() {
           <h1 className="text-2xl font-bold text-slate-800">Olá, {patientData.name.split(' ')[0]}</h1>
           <p className="text-slate-600">Bem-vindo(a) de volta ao seu painel.</p>
           
-          <div className="flex gap-4 mt-2">
+          <div className="flex flex-wrap gap-2 sm:gap-4 mt-2">
             <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Objetivo: {patientData.objective}</span>
             <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Peso: {patientData.weight}kg</span>
           </div>

@@ -82,10 +82,10 @@ export default function NutritionistAssistant() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-[calc(100dvh-var(--app-chrome))] lg:h-[calc(100vh-8rem)] flex flex-col">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Assistente IA Clínico</h1>
-        <p className="text-gray-600 mb-6">Seu co-piloto para análise de dados dos seus pacientes.</p>
+        <p className="text-gray-600 mb-4 lg:mb-6">Seu co-piloto para análise de dados dos seus pacientes.</p>
       </div>
 
       <Card className="flex-1 flex flex-col min-h-0 border-emerald-100 shadow-sm">

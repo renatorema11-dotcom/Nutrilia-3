@@ -66,9 +66,10 @@ function AgentInner({
   };
 
   return (
-    <div className="flex flex-col items-center gap-4 p-4 bg-teal-50 rounded-xl border border-teal-100">
-      <div className="text-center space-y-2">
-        <h3 className="font-semibold text-teal-900 flex items-center justify-center gap-2">
+    // No celular fica compacto (texto à esquerda, botão à direita); no computador, em coluna.
+    <div className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 p-4 bg-teal-50 rounded-xl border border-teal-100 lg:flex lg:flex-col lg:items-center lg:gap-4">
+      <div className="text-left lg:text-center space-y-1 lg:space-y-2">
+        <h3 className="font-semibold text-teal-900 flex items-center lg:justify-center gap-2">
           <Bot className="w-5 h-5 text-teal-600" />
           Ali — Assistente de Voz
         </h3>
@@ -77,7 +78,7 @@ function AgentInner({
         </p>
       </div>
 
-      <div className="relative">
+      <div className="relative row-span-2">
         <div className={`absolute inset-0 bg-teal-500 rounded-full blur-xl opacity-20 transition-all duration-500 ${isSpeaking ? 'scale-150 opacity-40' : 'scale-100 opacity-20'}`} />
         <Button
           onClick={handleToggleSession}
@@ -98,13 +99,13 @@ function AgentInner({
         </Button>
       </div>
       
-      <div className="text-xs font-medium px-3 py-1 bg-white rounded-full border border-teal-200 text-teal-800">
+      <div className="justify-self-start text-xs font-medium px-3 py-1 bg-white rounded-full border border-teal-200 text-teal-800">
         Status: {status === 'connected' ? 'Conectado' : status === 'connecting' ? 'Conectando...' : 'Desconectado'}
       </div>
-      
-      {sessionError && <p role="alert" className="text-sm text-red-700">{sessionError}</p>}
+
+      {sessionError && <p role="alert" className="col-span-2 text-sm text-red-700">{sessionError}</p>}
       {status === 'connected' && (
-        <div className="text-xs text-slate-500 animate-pulse">
+        <div className="col-span-2 text-xs text-slate-500 animate-pulse">
           {isSpeaking ? 'O Ali está falando...' : 'Ouvindo...'}
         </div>
       )}

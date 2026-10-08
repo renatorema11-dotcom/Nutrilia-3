@@ -229,7 +229,8 @@ export default function PatientNutritionistSelectionPage() {
               <ShieldCheck className="w-3.5 h-3.5" /> Nutricionista Vinculado
             </div>
 
-            <CardContent className="p-6 sm:p-8">
+            {/* Espaço extra no topo enquanto a foto fica centralizada, para o selo não cobri-la. */}
+            <CardContent className="p-6 pt-12 sm:p-8 sm:pt-12 md:pt-8">
               <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
                 {/* Profile Avatar */}
                 <div className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-200 border-4 border-white shadow-md shrink-0 flex items-center justify-center">

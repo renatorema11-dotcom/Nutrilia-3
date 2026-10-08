@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-provider';
 import { Card, CardContent, Button, Input } from '@/components/ui';
 import { Apple } from 'lucide-react';
@@ -49,7 +50,19 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const { loginWithGoogle, loginWithEmail } = useAuth();
+  const { loginWithGoogle, loginWithEmail, user, role, ready, mustChangePassword } = useAuth();
+  const router = useRouter();
+  const sessionChecked = useRef(false);
+
+  // Quem abre o app já conectado (ex.: pelo ícone na tela inicial) vai direto ao painel.
+  // Confere só uma vez, para não disputar com o redirecionamento do próprio login.
+  useEffect(() => {
+    if (!ready || sessionChecked.current) return;
+    sessionChecked.current = true;
+    if (user && role) {
+      router.replace(role === 'patient' && mustChangePassword ? '/patient/change-password' : `/${role}`);
+    }
+  }, [ready, user, role, mustChangePassword, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,11 +148,12 @@ export default function Login() {
               {isLoadingGoogle ? 'Entrando com Google...' : 'Entrar com o Google'}
             </Button>
 
-            <div className="relative flex items-center justify-center">
-              <div className="border-t border-slate-200 w-full" />
-              <span className="bg-white px-3 text-xs text-slate-500 uppercase tracking-wider relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs text-slate-500 uppercase tracking-wider whitespace-nowrap">
                 ou com email
               </span>
+              <div className="h-px flex-1 bg-slate-200" />
             </div>
 
             <form className="space-y-4" onSubmit={handleLogin}>

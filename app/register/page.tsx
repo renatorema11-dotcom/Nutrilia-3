@@ -117,11 +117,12 @@ export default function Register() {
               {isLoadingGoogle ? 'Cadastrando com Google...' : 'Cadastrar com o Google'}
             </Button>
 
-            <div className="relative flex items-center justify-center">
-              <div className="border-t border-slate-200 w-full" />
-              <span className="bg-white px-3 text-xs text-slate-500 uppercase tracking-wider relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs text-slate-500 uppercase tracking-wider whitespace-nowrap">
                 ou com email
               </span>
+              <div className="h-px flex-1 bg-slate-200" />
             </div>
 
             <form className="space-y-4" onSubmit={handleRegister}>
