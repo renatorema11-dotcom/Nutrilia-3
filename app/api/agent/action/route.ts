@@ -6,6 +6,7 @@ import firebaseConfig from '../../../../firebase-applet-config.json';
 export const runtime = 'nodejs';
 import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
+import * as workspace from '@/lib/google-workspace';
 
 /** Ações do próprio paciente: segredo do gateway + ID token Firebase verificado. */
 function getAdminApp(): App {
@@ -30,9 +31,14 @@ function secretMatches(provided: string | null, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-type Action = 'get_patient_data' | 'log_measurement' | 'log_meal' | 'request_appointment';
+type Action = 'get_patient_data' | 'log_measurement' | 'log_meal' | 'request_appointment'
+  | 'get_free_slots' | 'book_appointment' | 'send_plan_email';
 
-const ALLOWED_ACTIONS: Action[] = ['get_patient_data', 'log_measurement', 'log_meal', 'request_appointment'];
+const ALLOWED_ACTIONS: Action[] = ['get_patient_data', 'log_measurement', 'log_meal', 'request_appointment',
+  'get_free_slots', 'book_appointment', 'send_plan_email'];
+
+/** Ações que só leem dados; as demais exigem confirmação explícita do paciente. */
+const READ_ONLY_ACTIONS: Action[] = ['get_patient_data', 'get_free_slots'];
 
 interface AgentRequestBody {
   action?: string;
@@ -60,6 +66,24 @@ async function audit(db: Firestore, patientUid: string, nutritionistId: string |
     // Auditoria não deve bloquear a ação do paciente, mas o erro precisa aparecer nos logs
     console.error('Ali: falha ao registrar auditoria.');
   }
+}
+
+type StoredPlan = { status?: string; createdDate?: string; days?: { name: string; meals: { name: string; time: string; items: string[] }[] }[] } | null | undefined;
+
+/** Só o plano aprovado sai do app, com tamanho limitado (rascunhos nunca chegam à Ali). */
+function approvedPlanOf(plan: StoredPlan) {
+  if (plan?.status !== 'approved') return null;
+  return {
+    status: 'approved',
+    createdDate: plan.createdDate || '',
+    days: (Array.isArray(plan.days) ? plan.days : []).slice(0, 7).map(day => ({
+      name: String(day.name || '').slice(0, 100),
+      meals: (Array.isArray(day.meals) ? day.meals : []).slice(0, 10).map(meal => ({
+        name: String(meal.name || '').slice(0, 100), time: String(meal.time || '').slice(0, 30),
+        items: (Array.isArray(meal.items) ? meal.items : []).slice(0, 12).map(item => String(item).slice(0, 500)),
+      })),
+    })),
+  };
 }
 
 function speechResponse(text: string, extra: Record<string, unknown> = {}) {
@@ -116,7 +140,7 @@ export async function POST(req: Request) {
   if (!action || !ALLOWED_ACTIONS.includes(action)) {
     return speechError('Ação não reconhecida. Ações disponíveis: ' + ALLOWED_ACTIONS.join(', ') + '.');
   }
-  if (action !== 'get_patient_data' && body.confirmed !== true) {
+  if (!READ_ONLY_ACTIONS.includes(action) && body.confirmed !== true) {
     return speechError('Confirme os dados antes de registrar a ação.', 422);
   }
 
@@ -131,28 +155,20 @@ export async function POST(req: Request) {
     const patient = patientSnap.data() as {
       nutritionistId?: string;
       name?: string;
+      email?: string;
       weight?: number;
       height?: number;
       age?: number;
       objective?: string;
       targetWeight?: number;
       nextAppointment?: string;
-      currentPlan?: { status?: string; createdDate?: string; days?: { name: string; meals: { name: string; time: string; items: string[] }[] }[] } | null;
+      currentPlan?: StoredPlan;
     };
+    const patientEmail = workspace.isValidEmail(patient.email) ? patient.email : null;
 
     switch (action) {
       case 'get_patient_data': {
-        const approvedPlan = patient.currentPlan?.status === 'approved' ? {
-          status: 'approved',
-          createdDate: patient.currentPlan.createdDate || '',
-          days: (Array.isArray(patient.currentPlan.days) ? patient.currentPlan.days : []).slice(0, 7).map(day => ({
-            name: String(day.name || '').slice(0, 100),
-            meals: (Array.isArray(day.meals) ? day.meals : []).slice(0, 10).map(meal => ({
-              name: String(meal.name || '').slice(0, 100), time: String(meal.time || '').slice(0, 30),
-              items: (Array.isArray(meal.items) ? meal.items : []).slice(0, 12).map(item => String(item).slice(0, 500)),
-            })),
-          })),
-        } : null;
+        const approvedPlan = approvedPlanOf(patient.currentPlan);
         const planSummary = approvedPlan ? approvedPlan.days.map(day => `${day.name}: `
           + day.meals.map(meal => `${meal.name}${meal.time ? ' às ' + meal.time : ''}: ${meal.items.join(', ')}`).join('; ')).join('. ') : '';
         await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
@@ -233,8 +249,47 @@ export async function POST(req: Request) {
           source: 'ali',
         });
 
+        await workspace.notifyAppointmentRequest(db, {
+          nutritionistId: patient.nutritionistId, patientName: patient.name || '', preferredDate, notes,
+        });
         await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
         return speechResponse(`Feito! Enviei o pedido de consulta${preferredDate ? ` para ${preferredDate}` : ''} para a sua nutricionista. Ela vai confirmar o horário com você.`);
+      }
+
+      case 'get_free_slots': {
+        if (!patient.nutritionistId) return speechError('Vincule um nutricionista ao seu acompanhamento antes de marcar uma consulta.', 422);
+        const result = await workspace.findFreeSlots(db, patient.nutritionistId, { date: payload.date, period: payload.period });
+        if (!result.ok) return speechError(result.speech, result.status);
+        await audit(db, patientUid, patient.nutritionistId, action);
+        return speechResponse(result.speech, { slots: result.slots, mode: result.mode });
+      }
+
+      case 'book_appointment': {
+        if (!patient.nutritionistId) return speechError('Vincule um nutricionista ao seu acompanhamento antes de marcar uma consulta.', 422);
+        if (typeof payload.start !== 'string' || payload.start.length > 40) {
+          return speechError('Escolha um dos horários livres que eu informei.', 422);
+        }
+        if (payload.notes !== undefined && (typeof payload.notes !== 'string' || payload.notes.length > 1000)) {
+          return speechError('Resuma as observações da consulta.', 422);
+        }
+        const result = await workspace.bookAppointment(db, {
+          nutritionistId: patient.nutritionistId, patientUid, patientName: patient.name || '', patientEmail,
+          start: payload.start, mode: payload.mode, notes: payload.notes,
+        });
+        if (!result.ok) return speechError(result.speech, result.status);
+        await audit(db, patientUid, patient.nutritionistId, action);
+        return speechResponse(result.speech, { appointment: result.appointment });
+      }
+
+      case 'send_plan_email': {
+        if (!patient.nutritionistId) return speechError('Vincule um nutricionista ao seu acompanhamento antes de pedir o plano por e-mail.', 422);
+        const result = await workspace.sendPlanEmail(db, {
+          nutritionistId: patient.nutritionistId, patientUid, patientName: patient.name || '', patientEmail,
+          days: approvedPlanOf(patient.currentPlan)?.days || [],
+        });
+        if (!result.ok) return speechError(result.speech, result.status);
+        await audit(db, patientUid, patient.nutritionistId, action);
+        return speechResponse(result.speech);
       }
     }
   } catch {
