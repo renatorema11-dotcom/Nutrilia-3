@@ -6,6 +6,32 @@ import { useConversation, ConversationProvider } from '@elevenlabs/react';
 import { Button } from '@/components/ui';
 import { Mic, MicOff, Loader2, Bot } from 'lucide-react';
 
+// Valores usados se a personalização da nutricionista não carregar: a Ali precisa receber todas as variáveis.
+const DEFAULT_ALI_CONTEXT: Record<string, string> = {
+  patientFirstName: 'tudo bem',
+  nutritionistName: 'sua nutricionista',
+  attendanceInfo: 'Horários de atendimento não informados.',
+  clinicInfo: 'Nenhuma informação do consultório cadastrada.',
+  nutritionistGuidelines: 'Nenhuma orientação adicional.',
+  agendaStatus: 'nao_conectada',
+};
+
+/** Personalização da Ali definida pela nutricionista do paciente (horários, consultório, orientações). */
+async function loadAliContext(token: string): Promise<Record<string, string>> {
+  try {
+    const res = await fetch('/api/ali/context', { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
+    if (!res.ok) return DEFAULT_ALI_CONTEXT;
+    const data = await res.json();
+    const vars = data?.dynamicVariables;
+    if (!vars || typeof vars !== 'object') return DEFAULT_ALI_CONTEXT;
+    return Object.fromEntries(Object.keys(DEFAULT_ALI_CONTEXT).map((key) => [
+      key, typeof vars[key] === 'string' && vars[key] ? vars[key] : DEFAULT_ALI_CONTEXT[key],
+    ]));
+  } catch {
+    return DEFAULT_ALI_CONTEXT;
+  }
+}
+
 function AgentInner({
   agentId,
   dynamicVariables,
@@ -43,9 +69,10 @@ function AgentInner({
         if (!current || current.isAnonymous) throw new Error('Entre com sua conta de paciente para conversar com a Ali.');
         const token = await current.getIdToken(true);
         if (auth.currentUser?.uid !== current.uid) throw new Error('Sua sessão mudou. Entre novamente.');
+        const aliContext = await loadAliContext(token);
         sessionUid.current = current.uid;
         await startSession({ agentId, dynamicVariables: {
-          ...dynamicVariables, patientUid: current.uid, secret__patientToken: token,
+          ...aliContext, ...dynamicVariables, patientUid: current.uid, secret__patientToken: token,
         } });
         if (auth.currentUser?.uid !== current.uid) {
           await endSession();
