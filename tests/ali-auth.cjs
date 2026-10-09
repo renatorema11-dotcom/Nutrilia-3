@@ -14,7 +14,16 @@ async function test(name,options,status,inspect=()=>{}) {
   const ref={ get:async()=>{events.push('read-patient');return {exists:true,data:()=>patient};},update:async(data)=>{events.push('write-patient');events.push(['saved-patient',data]);},collection:()=>({add:async(data)=>{events.push('write-meal');events.push(['saved-meal',data]);}})};
   const db={collection:name=>({doc:uid=>{events.push(['doc',name,uid]);return ref;},add:async(data)=>events.push(['add',name,data])})};
   const env={AGENT_API_SECRET:secret,FIREBASE_SERVICE_ACCOUNT_KEY:JSON.stringify({project_id:cfg.projectId}),...options.env};
-  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,
+  // Integração Google simulada: registra as chamadas e devolve respostas fixas.
+  const workspace={
+    isValidEmail:v=>typeof v==='string'&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+    notifyAppointmentRequest:async (db,input)=>{events.push(['notify',input]);},
+    findFreeSlots:async (db,nutritionistId,filters)=>{events.push(['slots',nutritionistId,filters]);return {ok:true,speech:'Tenho terça às 14h.',slots:[{start:'2026-10-13T14:00:00-03:00',label:'terça'}],mode:'online'};},
+    bookAppointment:async (db,input)=>{events.push(['book',input]);return {ok:true,speech:'Consulta marcada.',appointment:{label:'terça',start:input.start,mode:'online'}};},
+    sendPlanEmail:async (db,input)=>{events.push(['plan-mail',input]);return {ok:true,speech:'Plano enviado.'};},
+    ...options.workspace,
+  };
+  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,
     NextResponse:{json:(body,init={})=>({body,status:init.status||200,headers:init.headers})},
     getApps:()=>[],cert:a=>a,initializeApp:()=>({name:'test'}),
     getAuth:()=>({verifyIdToken:async(token,revocation)=>{
@@ -54,7 +63,7 @@ async function test(name,options,status,inspect=()=>{}) {
   await test('Corpo nulo', {rawBody:'null'},400,noDb);
   await test('Payload inválido', {body:{action:'get_patient_data',payload:[]}},400,noDb);
   await test('Ação fora da allowlist', {body:{action:'delete_patient'}},400,noDb);
-  for(const action of ['log_meal','log_measurement','request_appointment']) {
+  for(const action of ['log_meal','log_measurement','request_appointment','book_appointment','send_plan_email']) {
     await test('Exige confirmação: '+action,{body:{action,payload:{}}},422,noDb);
   }
   await test('Consulta usa UID verificado e banco nomeado',{},200,(ev,res)=>{
@@ -91,6 +100,33 @@ async function test(name,options,status,inspect=()=>{}) {
     assert.equal(request.status,'pending');
     assert.equal(request.patientUid,'patient-A');
     assert.equal(request.nutritionistId,'nutritionist-A');
+    assert.equal(ev.find(e=>e[0]==='notify')[1].nutritionistId,'nutritionist-A');
+  });
+  await test('Horários livres não exigem confirmação e usam a nutricionista do paciente',{body:{action:'get_free_slots',payload:{period:'tarde'}}},200,(ev,res)=>{
+    const call=ev.find(e=>e[0]==='slots');
+    assert.equal(call[1],'nutritionist-A');
+    assert.equal(call[2].period,'tarde');
+    assert.equal(res.body.slots[0].start,'2026-10-13T14:00:00-03:00');
+  });
+  await test('Horários livres sem nutricionista vinculada',{patient:{nutritionistId:null},body:{action:'get_free_slots'}},422);
+  await test('Marcar consulta exige horário em texto',{body:{action:'book_appointment',confirmed:true,payload:{start:['2026-10-13T14:00:00-03:00']}}},422);
+  await test('Marcar consulta usa e-mail do prontuário, nunca o do pedido',{patient:{email:'paciente@exemplo.com'},body:{action:'book_appointment',confirmed:true,payload:{start:'2026-10-13T14:00:00-03:00',email:'outra@pessoa.com'}}},200,(ev,res)=>{
+    const call=ev.find(e=>e[0]==='book')[1];
+    assert.equal(call.patientEmail,'paciente@exemplo.com');
+    assert.equal(call.nutritionistId,'nutritionist-A');
+    assert.equal(call.patientUid,'patient-A');
+    assert.equal(res.body.appointment.start,'2026-10-13T14:00:00-03:00');
+  });
+  await test('Recusa da agenda chega à Ali com o status certo',{workspace:{bookAppointment:async()=>({ok:false,status:409,speech:'Horário ocupado.'})},body:{action:'book_appointment',confirmed:true,payload:{start:'2026-10-13T14:00:00-03:00'}}},409,(_,res)=>{
+    assert.equal(res.body.speech,'Horário ocupado.');
+  });
+  await test('Plano por e-mail só leva o plano aprovado',{patient:{email:'paciente@exemplo.com',currentPlan:{status:'approved',days:[{name:'Segunda',meals:[{name:'Almoço',time:'12:00',items:['Arroz']}]}]}},body:{action:'send_plan_email',confirmed:true}},200,ev=>{
+    const call=ev.find(e=>e[0]==='plan-mail')[1];
+    assert.equal(call.days[0].meals[0].items[0],'Arroz');
+    assert.equal(call.patientEmail,'paciente@exemplo.com');
+  });
+  await test('Rascunho não vai por e-mail',{patient:{currentPlan:{status:'draft',days:[{name:'rascunho secreto',meals:[]}]}},body:{action:'send_plan_email',confirmed:true}},200,ev=>{
+    assert.equal(ev.find(e=>e[0]==='plan-mail')[1].days.length,0);
   });
   console.log(reports.join('\n'));
   console.log('Firebase Admin e Firestore simulados; assinatura real e integração entre serviços exigem teste separado.');
