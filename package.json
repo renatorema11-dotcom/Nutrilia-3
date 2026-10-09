@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "clean": "next clean",
-    "test:ali": "node tests/ali-auth.cjs",
+    "test:ali": "node tests/ali-auth.cjs && node tests/agenda.cjs",
     "typecheck": "tsc --noEmit",
     "test:n8n": "node tests/n8n-contract.cjs"
   },
