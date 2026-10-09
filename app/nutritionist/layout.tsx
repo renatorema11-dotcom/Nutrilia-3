@@ -3,15 +3,16 @@
 import { useAuth } from '@/components/auth-provider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { LayoutDashboard, Users, MessageSquareText, MessageSquare, User } from 'lucide-react';
-import Script from 'next/script';
+import { LayoutDashboard, Users, MessageSquareText, MessageSquare, User, Bot } from 'lucide-react';
 import { AppShell, AppLoading, type NavItem } from '@/components/app-shell';
+import { NutritionistAliWidget } from '@/components/nutritionist-ali-widget';
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', shortName: 'Início', href: '/nutritionist', icon: LayoutDashboard, inBottomBar: true },
   { name: 'Pacientes', shortName: 'Pacientes', href: '/nutritionist/patients', icon: Users, inBottomBar: true },
   { name: 'Chat com Pacientes', shortName: 'Chat', href: '/nutritionist/chat', icon: MessageSquare, inBottomBar: true },
   { name: 'Assistente IA', shortName: 'Assistente', href: '/nutritionist/assistant', icon: MessageSquareText, inBottomBar: true },
+  { name: 'Minha Ali', shortName: 'Minha Ali', href: '/nutritionist/ali', icon: Bot },
   { name: 'Meu Perfil', shortName: 'Perfil', href: '/nutritionist/profile', icon: User, inBottomBar: true },
 ];
 
@@ -30,8 +31,8 @@ export default function NutritionistLayout({ children }: { children: React.React
   if (!ready) return <AppLoading />;
   if (role !== 'nutritionist') return null;
 
-  // Nas telas com campo de mensagem embaixo, o botão flutuante cobriria o campo no celular.
-  const hideWidgetOnMobile = pathname.startsWith('/nutritionist/chat') || pathname.startsWith('/nutritionist/assistant');
+  // Nas telas com campo de digitação, o botão flutuante cobriria os campos no celular.
+  const hideWidgetOnMobile = ['/nutritionist/chat', '/nutritionist/assistant', '/nutritionist/ali'].some((p) => pathname.startsWith(p));
 
   return (
     <>
@@ -45,10 +46,8 @@ export default function NutritionistLayout({ children }: { children: React.React
         {children}
       </AppShell>
 
-      {/* ElevenLabs Conversational Widget */}
-      <Script src="https://unpkg.com/@elevenlabs/convai-widget-embed" strategy="lazyOnload" />
-      {/* @ts-ignore - Custom Web Component from ElevenLabs */}
-      <elevenlabs-convai agent-id="agent_4901kze5k1xhe5590n67kh1pby82" className={hideWidgetOnMobile ? 'convai-hide-mobile' : undefined}></elevenlabs-convai>
+      {/* ElevenLabs: prévia da Ali com as configurações desta nutricionista */}
+      <NutritionistAliWidget hideOnMobile={hideWidgetOnMobile} />
     </>
   );
 }
