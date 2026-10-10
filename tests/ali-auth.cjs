@@ -5,6 +5,9 @@ const { timingSafeEqual } = require('node:crypto');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../app/api/agent/action/route.ts'),'utf8');
 const code = stripTypeScriptTypes(source.replace(/^import .*;\r?\n/gm,'').replace('export const runtime', 'const runtime').replace('export async function POST', 'async function POST')) + '\nthis.POST = POST;';
+// Regras reais de água e humor (lib/daily-log.ts), carregadas sem as importações.
+const dailyLog = vm.runInContext('({ WATER_GOAL_ML, WATER_MAX_ML, MOOD_LABELS, isMood, dailyKey, isSameDay, waterToday, moodToday })',
+  require('./fakes.cjs').loadLib(['agenda.ts', 'daily-log.ts'], {}));
 const secret = 'local-test-secret-not-for-deployment-123456';
 const cfg = {projectId:'nutri-test',firestoreDatabaseId:'named-test-db'};
 let reports=[];
@@ -12,7 +15,9 @@ async function test(name,options,status,inspect=()=>{}) {
   const events=[];
   const patient={name:'Paciente Fictício',weight:80,objective:'Teste',targetWeight:75,nutritionistId:'nutritionist-A',...options.patient};
   const ref={ get:async()=>{events.push('read-patient');return {exists:true,data:()=>patient};},update:async(data)=>{events.push('write-patient');events.push(['saved-patient',data]);},collection:()=>({add:async(data)=>{events.push('write-meal');events.push(['saved-meal',data]);}})};
-  const db={collection:name=>({doc:uid=>{events.push(['doc',name,uid]);return ref;},add:async(data)=>events.push(['add',name,data])})};
+  // Perfil do paciente (users/{uid}): onde a tela e a Ali guardam a água e o humor do dia.
+  const userRef={ get:async()=>{events.push('read-user');return {exists:true,data:()=>options.profile||{}};},set:async(data,opts)=>{events.push('write-user');events.push(['saved-user',data,opts]);}};
+  const db={collection:name=>({doc:uid=>{events.push(['doc',name,uid]);return name==='users'?userRef:ref;},add:async(data)=>events.push(['add',name,data])})};
   const env={AGENT_API_SECRET:secret,FIREBASE_SERVICE_ACCOUNT_KEY:JSON.stringify({project_id:cfg.projectId}),...options.env};
   // Integração Google simulada: registra as chamadas e devolve respostas fixas.
   const workspace={
@@ -29,7 +34,7 @@ async function test(name,options,status,inspect=()=>{}) {
     rescheduleNextAppointment:async (db,uid,start)=>{events.push(['reschedule',uid,start]);return {ok:true,speech:'Consulta remarcada.',appointment:{label:'quarta',start,mode:'online'}};},
     ...options.appointments,
   };
-  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,appointments,
+  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,appointments,dailyLog,
     NextResponse:{json:(body,init={})=>({body,status:init.status||200,headers:init.headers})},
     getApps:()=>[],cert:a=>a,initializeApp:()=>({name:'test'}),
     getAuth:()=>({verifyIdToken:async(token,revocation)=>{
@@ -69,7 +74,7 @@ async function test(name,options,status,inspect=()=>{}) {
   await test('Corpo nulo', {rawBody:'null'},400,noDb);
   await test('Payload inválido', {body:{action:'get_patient_data',payload:[]}},400,noDb);
   await test('Ação fora da allowlist', {body:{action:'delete_patient'}},400,noDb);
-  for(const action of ['log_meal','log_measurement','request_appointment','book_appointment','send_plan_email','cancel_appointment','reschedule_appointment']) {
+  for(const action of ['log_meal','log_measurement','request_appointment','book_appointment','send_plan_email','cancel_appointment','reschedule_appointment','log_water','log_mood']) {
     await test('Exige confirmação: '+action,{body:{action,payload:{}}},422,noDb);
   }
   await test('Consulta usa UID verificado e banco nomeado',{},200,(ev,res)=>{
@@ -147,6 +152,56 @@ async function test(name,options,status,inspect=()=>{}) {
     assert.equal(call[1],'patient-A');
     assert.equal(call[2],'2026-10-14T14:00:00-03:00');
     assert.equal(res.body.appointment.start,'2026-10-14T14:00:00-03:00');
+  });
+  // Água e humor por voz: gravam no perfil do paciente, no mesmo formato da tela inicial.
+  const today=dailyLog.dailyKey();
+  const [year,month,day]=today.split('-');
+  const savedUser=ev=>ev.find(e=>e[0]==='saved-user');
+  // Os objetos gravados nascem em outro contexto de execução: compara pelo conteúdo.
+  const same=(actual,expected)=>assert.equal(JSON.stringify(actual),JSON.stringify(expected));
+  await test('Água soma ao que já foi bebido hoje e grava no perfil do paciente autenticado',{profile:{waterIntake:{amount:500,date:today}},body:{action:'log_water',confirmed:true,payload:{amountMl:250}}},200,(ev,res)=>{
+    same(savedUser(ev)[1],{waterIntake:{amount:750,date:today}});
+    same(savedUser(ev)[2],{merge:true});
+    assert.ok(ev.some(e=>Array.isArray(e)&&e[0]==='doc'&&e[1]==='users'&&e[2]==='patient-A'));
+    assert.match(res.body.speech,/Mais 250 ml de água\. Hoje você já bebeu 750 ml\. Faltam 1250 ml para a meta de 2000 ml\./);
+    const audit=ev.find(e=>e[0]==='add'&&e[1]==='aiActions')[2];
+    assert.equal(audit.action,'log_water');
+    assert.ok(!('amountMl' in audit));
+  });
+  await test('Água marcada na tela antiga (data no formato do navegador) continua valendo',{profile:{waterIntake:{amount:1000,date:`${day}/${month}/${year}`}},body:{action:'log_water',confirmed:true,payload:{amountMl:'500'}}},200,ev=>{
+    assert.equal(savedUser(ev)[1].waterIntake.amount,1500);
+  });
+  await test('Água de outro dia não entra na conta de hoje',{profile:{waterIntake:{amount:1800,date:'2020-01-01'}},body:{action:'log_water',confirmed:true,payload:{amountMl:300}}},200,(ev,res)=>{
+    assert.equal(savedUser(ev)[1].waterIntake.amount,300);
+    assert.match(res.body.speech,/Faltam 1700 ml/);
+  });
+  await test('Total do dia dito pelo paciente substitui a soma e pode corrigir para menos',{profile:{waterIntake:{amount:1800,date:today}},body:{action:'log_water',confirmed:true,payload:{amountMl:1000,setTotal:true}}},200,(ev,res)=>{
+    assert.equal(savedUser(ev)[1].waterIntake.amount,1000);
+    assert.match(res.body.speech,/Deixei anotado 1000 ml de água hoje\. Faltam 1000 ml/);
+  });
+  await test('Água: bater a meta e teto diário',{profile:{waterIntake:{amount:5900,date:today}},body:{action:'log_water',confirmed:true,payload:{amountMl:500}}},200,(ev,res)=>{
+    assert.equal(savedUser(ev)[1].waterIntake.amount,6000);
+    assert.match(res.body.speech,/Você bateu a meta/);
+  });
+  for(const payload of [{},{amountMl:'bastante'},{amountMl:10},{amountMl:5000},{amountMl:[250]},{amountMl:7000,setTotal:true},{amountMl:-1,setTotal:true}]) {
+    await test('Água inválida não grava: '+JSON.stringify(payload),{body:{action:'log_water',confirmed:true,payload}},422);
+  }
+  await test('Humor grava no perfil, só com um dos quatro valores da tela',{body:{action:'log_mood',confirmed:true,payload:{mood:'happy',patientUid:'patient-B'}}},200,(ev,res)=>{
+    same(savedUser(ev)[1],{moodDiary:{mood:'happy',date:today}});
+    assert.match(res.body.speech,/se sentindo feliz/);
+  });
+  await test('Humor triste recebe acolhimento e oferta de falar com a nutricionista',{body:{action:'log_mood',confirmed:true,payload:{mood:'sad'}}},200,(_,res)=>{
+    assert.match(res.body.speech,/Sinto muito/);
+    assert.match(res.body.speech,/nutricionista/);
+  });
+  for(const mood of ['angry','',null,['happy'],'constructor']) {
+    await test('Humor inválido não grava: '+JSON.stringify(mood),{body:{action:'log_mood',confirmed:true,payload:{mood}}},422);
+  }
+  await test('Dados do paciente contam a água e o humor de hoje',{profile:{waterIntake:{amount:500,date:today},moodDiary:{mood:'great',date:today}}},200,(_,res)=>{
+    assert.match(res.body.speech,/Água de hoje: 500 ml de 2000 ml\. Humor de hoje: ótimo\./);
+  });
+  await test('Sem registro de hoje, os dados dizem que ainda não há',{profile:{waterIntake:{amount:900,date:'2020-01-01'},moodDiary:{mood:'sad',date:'2020-01-01'}}},200,(_,res)=>{
+    assert.match(res.body.speech,/Água de hoje: 0 ml de 2000 ml\. Humor de hoje: ainda não registrado\./);
   });
   console.log(reports.join('\n'));
   console.log('Firebase Admin e Firestore simulados; assinatura real e integração entre serviços exigem teste separado.');
