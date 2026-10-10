@@ -113,7 +113,7 @@ function MinhaAliContent() {
   const greetingName = settings.displayName.trim() || 'sua nutricionista';
 
   return (
-    <div className="space-y-6 pb-6">
+    <div className="space-y-6 pb-6 lg:pb-28">
       <div>
         <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Bot className="w-6 h-6 text-teal-600" /> Minha Ali</h1>
         <p className="text-slate-600">Personalize a assistente de voz dos seus pacientes. Cada nutricionista tem a sua Ali.</p>
@@ -293,7 +293,8 @@ function MinhaAliContent() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
+      {/* No computador o botão flutuante da Ali fica no canto inferior direito: o Salvar vai para a esquerda. */}
+      <div className="flex justify-end lg:justify-start">
         <Button onClick={save} disabled={saving} className="gap-2 w-full sm:w-auto h-11">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Salvar configurações
