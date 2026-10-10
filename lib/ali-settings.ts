@@ -24,6 +24,8 @@ export interface AliSettings {
   contact: string;
   /** Orientações da nutricionista para a Ali (abordagem, lembretes). */
   guidelines: string;
+  /** Resumo da semana por e-mail, toda segunda de manhã. */
+  weeklySummary: boolean;
   timezone: string;
 }
 
@@ -47,6 +49,7 @@ export function defaultAliSettings(displayName = ''): AliSettings {
     price: '',
     contact: '',
     guidelines: '',
+    weeklySummary: true,
     timezone: 'America/Sao_Paulo',
   };
 }
@@ -102,6 +105,7 @@ export function sanitizeAliSettings(input: unknown, base: AliSettings = defaultA
     price: raw.price === undefined ? base.price : cleanText(raw.price, ALI_LIMITS.price),
     contact: raw.contact === undefined ? base.contact : cleanText(raw.contact, ALI_LIMITS.contact),
     guidelines: raw.guidelines === undefined ? base.guidelines : cleanText(raw.guidelines, ALI_LIMITS.guidelines),
+    weeklySummary: typeof raw.weeklySummary === 'boolean' ? raw.weeklySummary : base.weeklySummary,
     // Fuso fixo por enquanto: todo o atendimento do NutriAli é no horário de Brasília.
     timezone: 'America/Sao_Paulo',
   };
