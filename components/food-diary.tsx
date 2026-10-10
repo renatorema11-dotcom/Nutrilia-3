@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { AliFoodLogs } from './ali-food-logs';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
 
@@ -209,6 +210,7 @@ export function FoodDiary() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 mt-2">
+        {user && <AliFoodLogs patientUid={user.uid} />}
         {!hasPlan && (
           <div className="text-center py-6">
             <p className="text-slate-600 text-sm">Aguardando seu plano alimentar...</p>
@@ -299,7 +301,9 @@ export function FoodDiary() {
                           : "hover:bg-slate-50 text-slate-600 border-slate-200"
                       )}
                     >
-                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Refeição realizada
+                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0" />
+                      <span className="sm:hidden">Realizada</span>
+                      <span className="hidden sm:inline">Refeição realizada</span>
                     </button>
                     <button
                       onClick={() => handleStatusUpdate(meal.name, 'different')}

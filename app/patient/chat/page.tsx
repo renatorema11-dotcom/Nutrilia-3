@@ -94,14 +94,15 @@ export default function PatientChat() {
   const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col gap-6">
+    <div className="h-[calc(100dvh-var(--app-chrome))] lg:h-[calc(100vh-8rem)] flex flex-col gap-4 lg:gap-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Chat Nutri IA</h1>
         <p className="text-gray-600">Tire dúvidas rápidas sobre sua alimentação.</p>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-      <Card className="flex flex-col min-h-0">
+      {/* No celular: Ali em cima e a conversa ocupando o resto da tela. */}
+      <div className="flex-1 min-h-0 flex flex-col gap-4 lg:grid lg:grid-cols-[1fr_320px] lg:gap-6">
+      <Card className="flex-1 flex flex-col min-h-0">
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -147,7 +148,7 @@ export default function PatientChat() {
         </div>
       </Card>
 
-      <div className="min-h-0">
+      <div className="order-first lg:order-none lg:min-h-0">
         <ElevenLabsAgent
           agentId={agentId}
           dynamicVariables={{

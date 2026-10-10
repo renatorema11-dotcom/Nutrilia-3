@@ -7,6 +7,7 @@ import { format, parseISO, isAfter, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { AliAppointmentRequests } from './ali-appointment-requests';
 
 export type Appointment = {
   id: string;
@@ -148,6 +149,7 @@ END:VCALENDAR`;
         </Button>
       </CardHeader>
       <CardContent className="pt-4">
+        <AliAppointmentRequests isNutritionist={isNutritionist} />
         {isFormOpen && (
           <form onSubmit={handleAddAppointment} className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-4">
             <h4 className="font-medium text-sm text-slate-800">Agendar Novo Horário</h4>

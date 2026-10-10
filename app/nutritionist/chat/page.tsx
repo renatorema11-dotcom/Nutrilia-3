@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { Card, CardContent, Input, Button, Badge } from '@/components/ui';
-import { Send, User, Stethoscope, Search, Loader2, ArrowRight, ChevronRight, MessageSquare, ExternalLink } from 'lucide-react';
+import { Send, User, Stethoscope, Search, Loader2, ArrowLeft, ChevronRight, MessageSquare, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 import { getPatients, Patient } from '@/lib/patients';
 import {
@@ -23,6 +23,8 @@ function NutritionistChatContent() {
   const [loadingPatients, setLoadingPatients] = useState(true);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [search, setSearch] = useState('');
+  // No celular mostra a lista OU a conversa; a partir do tablet, as duas lado a lado.
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>(initialPatientId ? 'chat' : 'list');
 
   // Messages State
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -117,7 +119,7 @@ function NutritionistChatContent() {
   }
 
   return (
-    <div className="h-[calc(100vh-7.5rem)] flex flex-col space-y-4">
+    <div className="h-[calc(100dvh-var(--app-chrome))] lg:h-[calc(100vh-7.5rem)] flex flex-col space-y-4">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -131,7 +133,7 @@ function NutritionistChatContent() {
       {/* Main Layout Grid */}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 min-h-0">
         {/* Left Column: Patient List */}
-        <Card className="flex flex-col min-h-0 border-slate-200/80 shadow-md">
+        <Card className={`${mobileView === 'chat' ? 'hidden md:flex' : 'flex'} flex-col min-h-0 border-slate-200/80 shadow-md`}>
           <div className="p-3.5 border-b border-slate-100 bg-slate-50/50 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -163,6 +165,7 @@ function NutritionistChatContent() {
                     key={patient.id}
                     onClick={() => {
                       setSelectedPatient(patient);
+                      setMobileView('chat');
                       router.replace(`/nutritionist/chat?patientId=${patient.id}`);
                     }}
                     className={`w-full text-left p-3 rounded-xl transition-all flex items-center justify-between gap-2 ${
@@ -199,18 +202,26 @@ function NutritionistChatContent() {
         </Card>
 
         {/* Right Column: Active Conversation */}
-        <Card className="md:col-span-2 flex flex-col min-h-0 border-slate-200/80 shadow-md">
+        <Card className={`${mobileView === 'list' ? 'hidden md:flex' : 'flex'} md:col-span-2 flex-col min-h-0 border-slate-200/80 shadow-md`}>
           {selectedPatient ? (
             <div className="flex-1 flex flex-col min-h-0">
               {/* Chat Header */}
-              <div className="p-3.5 bg-gradient-to-r from-teal-800 to-emerald-800 text-white flex items-center justify-between px-5 border-b shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-white/20 border border-white/40 flex items-center justify-center font-bold text-white text-sm">
+              <div className="p-3.5 bg-gradient-to-r from-teal-800 to-emerald-800 text-white flex items-center justify-between gap-2 px-3 sm:px-5 border-b shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobileView('list')}
+                    aria-label="Voltar para a lista de pacientes"
+                    className="md:hidden -ml-1 p-1.5 rounded-lg hover:bg-white/10 shrink-0"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                  <div className="w-9 h-9 rounded-full bg-white/20 border border-white/40 flex items-center justify-center font-bold text-white text-sm shrink-0">
                     {selectedPatient.name?.charAt(0).toUpperCase() || 'P'}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-sm leading-tight">{selectedPatient.name}</h3>
-                    <p className="text-[11px] text-teal-100">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-sm leading-tight truncate">{selectedPatient.name}</h3>
+                    <p className="text-[11px] text-teal-100 truncate">
                       {selectedPatient.age ? `${selectedPatient.age} anos` : ''} {selectedPatient.weight ? `• ${selectedPatient.weight} kg` : ''} • {selectedPatient.objective}
                     </p>
                   </div>
@@ -218,7 +229,7 @@ function NutritionistChatContent() {
 
                 <Link
                   href={`/nutritionist/patients/${selectedPatient.id}`}
-                  className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-white font-medium transition-colors flex items-center gap-1.5"
+                  className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-white font-medium transition-colors flex items-center gap-1.5 shrink-0"
                 >
                   Prontuário <ExternalLink className="w-3 h-3" />
                 </Link>

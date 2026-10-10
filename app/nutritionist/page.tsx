@@ -75,7 +75,7 @@ export default function NutritionistDashboard() {
             {alerts.length > 0 ? (
               <div className="space-y-3">
                 {alerts.map((alert) => (
-                  <div key={alert.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-100">
+                  <div key={alert.id} className="flex items-center justify-between gap-3 p-3 bg-amber-50 rounded-lg border border-amber-100">
                     <p className="text-amber-900 text-sm font-medium">{alert.message}</p>
                     <Link href={`/nutritionist/patients/${alert.id}`}>
                       <Button variant="ghost" className="text-amber-800 hover:bg-amber-100 text-xs h-7 px-2">
@@ -129,7 +129,36 @@ export default function NutritionistDashboard() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                {/* Celular: lista em cartões, sem rolagem lateral */}
+                <ul className="sm:hidden divide-y divide-gray-100 -mx-2">
+                  {recentPatients.map((patient) => (
+                    <li key={patient.id}>
+                      <Link
+                        href={`/nutritionist/patients/${patient.id}`}
+                        className="flex items-center justify-between gap-3 px-2 py-3 rounded-lg active:bg-gray-50"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <p className="font-medium text-gray-900 truncate">{patient.name}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-gray-500">{patient.objective}</span>
+                            {patient.currentPlan ? (
+                              patient.currentPlan.status === 'approved' ? (
+                                <Badge variant="success">Ativo</Badge>
+                              ) : (
+                                <Badge variant="warning">Rascunho (IA)</Badge>
+                              )
+                            ) : (
+                              <Badge variant="default">Sem plano</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-sm text-left">
                     <thead className="text-xs text-gray-500 uppercase bg-gray-50">
                       <tr>
@@ -167,6 +196,7 @@ export default function NutritionistDashboard() {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </CardContent>
           </Card>

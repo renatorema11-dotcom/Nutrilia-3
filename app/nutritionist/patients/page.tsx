@@ -7,6 +7,13 @@ import Link from 'next/link';
 import { getPatients, Patient } from '@/lib/patients';
 import { AddPatientModal } from '@/components/add-patient-modal';
 
+function PlanBadge({ patient }: { patient: Patient }) {
+  if (!patient.currentPlan) return <Badge variant="default">Sem Plano</Badge>;
+  return patient.currentPlan.status === 'approved'
+    ? <Badge variant="success">Plano Ativo</Badge>
+    : <Badge variant="warning">Aprovação Pendente</Badge>;
+}
+
 export default function PatientsList() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,23 +107,21 @@ export default function PatientsList() {
                 >
                   <Link
                     href={`/nutritionist/patients/${patient.id}`}
-                    className="flex-1 min-w-0 pr-4 group"
+                    className="flex-1 min-w-0 pr-3 sm:pr-4 group"
                   >
-                    <p className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors">{patient.name}</p>
+                    <p className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors truncate">{patient.name}</p>
                     <p className="text-sm text-gray-500 truncate">
                       {patient.email} • {patient.age} anos • {patient.objective}
                     </p>
+                    {/* No celular o status do plano fica abaixo do nome, para o nome não ser cortado. */}
+                    <div className="sm:hidden mt-1.5">
+                      <PlanBadge patient={patient} />
+                    </div>
                   </Link>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {patient.currentPlan ? (
-                      patient.currentPlan.status === 'approved' ? (
-                        <Badge variant="success">Plano Ativo</Badge>
-                      ) : (
-                        <Badge variant="warning">Aprovação Pendente</Badge>
-                      )
-                    ) : (
-                      <Badge variant="default">Sem Plano</Badge>
-                    )}
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <span className="hidden sm:inline-flex">
+                      <PlanBadge patient={patient} />
+                    </span>
                     <Link
                       href={`/nutritionist/chat?patientId=${patient.id}`}
                       className="p-1.5 text-teal-700 hover:bg-teal-50 rounded-lg border border-teal-200 transition-colors flex items-center gap-1 text-xs font-semibold"
