@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { defaultAliSettings, sanitizeAliSettings, describeMode, type AliSettings } from './ali-settings';
-import { generateSlots, isFree, searchWindow, slotLabel, toOffsetIso, validateSlotStart, type Interval, type Period, type Slot } from './agenda';
+import { generateSlots, initialReminders, isFree, searchWindow, slotLabel, toOffsetIso, validateSlotStart, type Interval, type Period, type Reminders, type Slot } from './agenda';
 
 export const GOOGLE_SCOPES = [
   'openid',
@@ -198,18 +198,26 @@ export async function getAccess(db: Firestore, uid: string): Promise<Access> {
 
 // ───────────── Agenda e Gmail ─────────────
 
-async function googleApi(token: string, url: string, body: unknown) {
+export const CALENDAR_EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+
+/** Chamada às APIs do Google que devolve o status em vez de lançar erro (ex.: evento já apagado). */
+export async function googleRequest(token: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown) {
   const res = await fetch(url, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    method,
+    headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Google respondeu ${res.status}`);
-  return json as Record<string, any>;
+  return { ok: res.ok, status: res.status, json: json as Record<string, any> };
 }
 
-async function busyIntervals(token: string, window: Interval, timeZone: string): Promise<Interval[]> {
+async function googleApi(token: string, url: string, body: unknown) {
+  const res = await googleRequest(token, 'POST', url, body);
+  if (!res.ok) throw new Error(`Google respondeu ${res.status}`);
+  return res.json;
+}
+
+export async function busyIntervals(token: string, window: Interval, timeZone: string): Promise<Interval[]> {
   const json = await googleApi(token, 'https://www.googleapis.com/calendar/v3/freeBusy', {
     timeMin: window.start.toISOString(), timeMax: window.end.toISOString(), timeZone, items: [{ id: 'primary' }],
   });
@@ -228,7 +236,7 @@ function encodeHeader(text: string): string {
   return `=?UTF-8?B?${Buffer.from(text.replace(/[\r\n]+/g, ' '), 'utf8').toString('base64')}?=`;
 }
 
-async function sendMail(token: string, mail: { fromName: string; fromEmail: string; to: string; subject: string; html: string }) {
+export async function sendMail(token: string, mail: { fromName: string; fromEmail: string; to: string; subject: string; html: string }) {
   if (!isValidEmail(mail.to) || !isValidEmail(mail.fromEmail)) throw new Error('e-mail inválido');
   const message = [
     `From: ${encodeHeader(mail.fromName || 'NutriAli')} <${mail.fromEmail}>`,
@@ -249,7 +257,7 @@ export function escapeHtml(value: unknown): string {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
 
-function emailLayout(title: string, body: string, footer: string): string {
+export function emailLayout(title: string, body: string, footer: string): string {
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f2f7f4;font-family:Arial,Helvetica,sans-serif;color:#14251f">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f7f4;padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #dbe7e0">
@@ -259,7 +267,7 @@ function emailLayout(title: string, body: string, footer: string): string {
 </table></td></tr></table></body></html>`;
 }
 
-const p = (html: string) => `<p style="margin:0 0 12px;font-size:15px;line-height:1.6">${html}</p>`;
+export const p = (html: string) => `<p style="margin:0 0 12px;font-size:15px;line-height:1.6">${html}</p>`;
 
 // ───────────── Configurações da Ali ─────────────
 
@@ -284,7 +292,32 @@ export async function saveSettings(db: Firestore, nutritionistId: string, input:
 
 // ───────────── Ações da Ali ─────────────
 
-type ActionResult = { ok: true; speech: string; [key: string]: unknown } | { ok: false; status: number; speech: string };
+export type ActionResult = { ok: true; speech: string; [key: string]: unknown } | { ok: false; status: number; speech: string };
+
+/** Registro de uma consulta marcada pela Ali (coleção aliAppointments): base dos lembretes, do cancelamento e da remarcação. */
+export interface AppointmentRecord {
+  eventId: string;
+  nutritionistId: string;
+  patientUid: string;
+  patientName: string;
+  patientEmail: string | null;
+  startAt: string;
+  endAt: string;
+  startLocal: string;
+  label: string;
+  mode: 'online' | 'presencial';
+  meetLink: string;
+  status: 'scheduled' | 'cancelled';
+  reminders: Reminders;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const APPOINTMENTS_COLLECTION = 'aliAppointments';
+
+export function appointmentDocId(nutritionistId: string, eventId: string): string {
+  return `${nutritionistId}_${eventId}`;
+}
 
 function accessFailure(reason: Exclude<Access, { ok: true }>['reason'], fallback: string): ActionResult {
   if (reason === 'unavailable') return { ok: false, status: 502, speech: 'Não consegui acessar a agenda da sua nutricionista agora. Tente de novo em instantes.' };
@@ -386,11 +419,30 @@ export async function bookAppointment(db: Firestore, input: BookingInput): Promi
   };
 
   // Registro no app (a consulta já existe na agenda; falhas aqui não desfazem o evento).
+  const stamp = now.toISOString();
+  const record: AppointmentRecord = {
+    eventId: appointment.id,
+    nutritionistId: input.nutritionistId,
+    patientUid: input.patientUid,
+    patientName: appointment.patientName,
+    patientEmail: input.patientEmail,
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    startLocal: toOffsetIso(start, tz),
+    label,
+    mode,
+    meetLink,
+    status: 'scheduled',
+    reminders: initialReminders(start, now),
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
   try {
     await Promise.all([
       db.collection('patients').doc(input.patientUid).set({ nextAppointment: label, nextAppointmentAt: toOffsetIso(start, tz) }, { merge: true }),
       db.collection('users').doc(input.patientUid).set({ appointments: FieldValue.arrayUnion(appointment) }, { merge: true }),
       db.collection('users').doc(input.nutritionistId).set({ appointments: FieldValue.arrayUnion(appointment) }, { merge: true }),
+      db.collection(APPOINTMENTS_COLLECTION).doc(appointmentDocId(input.nutritionistId, appointment.id)).set(record),
     ]);
   } catch {
     console.error('Ali: consulta criada na agenda, mas não registrada no app.');
@@ -412,7 +464,8 @@ export async function bookAppointment(db: Firestore, input: BookingInput): Promi
           p(`Olá, ${escapeHtml(input.patientName || '')}!`),
           p(`Sua consulta com ${escapeHtml(nutriName)} está marcada para <strong>${escapeHtml(label)}</strong>, com duração de ${settings.durationMinutes} minutos.`),
           p(where),
-          settings.contact ? p(`Se precisar remarcar, fale com ${escapeHtml(nutriName)}: ${escapeHtml(settings.contact)}.`) : '',
+          p('Se precisar remarcar ou cancelar, é só pedir para a Ali no aplicativo.'),
+          settings.contact ? p(`Para falar com ${escapeHtml(nutriName)}: ${escapeHtml(settings.contact)}.`) : '',
           p('Você também recebeu o convite na sua agenda do Google.'),
         ].join(''), 'Consulta marcada pela Ali, a assistente do NutriAli.'),
       });

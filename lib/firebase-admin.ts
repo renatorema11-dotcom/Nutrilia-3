@@ -1,4 +1,5 @@
 // Firebase Admin para as rotas do servidor (mesma conta de serviço da API da Ali).
+import { timingSafeEqual } from 'node:crypto';
 import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
@@ -35,6 +36,16 @@ export async function verifyCaller(req: Request): Promise<Caller | null> {
   } catch {
     return null;
   }
+}
+
+/** Confere o segredo do n8n (cabeçalho x-webhook-secret) nas rotas chamadas de servidor para servidor. */
+export function hasGatewaySecret(req: Request): boolean {
+  const expected = process.env.AGENT_API_SECRET;
+  const provided = req.headers.get('x-webhook-secret');
+  if (!expected || expected.length < 32 || !provided || provided.length > 4096) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}) {

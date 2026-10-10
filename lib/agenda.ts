@@ -143,3 +143,45 @@ export function validateSlotStart(settings: AliSettings, value: string, now: Dat
 export function isFree(start: Date, end: Date, busy: Interval[], intervalMinutes: number): boolean {
   return !overlaps(start, end, busy, intervalMinutes * 60_000);
 }
+
+/** Tira da lista de ocupados o horário de uma consulta que vai ser remarcada. */
+export function withoutInterval(busy: Interval[], removed: Interval): Interval[] {
+  const from = removed.start.getTime();
+  const to = removed.end.getTime();
+  const result: Interval[] = [];
+  for (const b of busy) {
+    if (b.end.getTime() <= from || b.start.getTime() >= to) { result.push(b); continue; }
+    if (b.start.getTime() < from) result.push({ start: b.start, end: removed.start });
+    if (b.end.getTime() > to) result.push({ start: removed.end, end: b.end });
+  }
+  return result;
+}
+
+export type ReminderState = 'pending' | 'sent' | 'skipped';
+export type ReminderKind = 'day' | 'hour';
+export interface Reminders { day: ReminderState; hour: ReminderState }
+
+/** Lembretes de uma consulta recém-marcada: não lembra do que acabou de ser combinado. */
+export function initialReminders(start: Date, now: Date): Reminders {
+  const minutes = (start.getTime() - now.getTime()) / 60_000;
+  return { day: minutes > 26 * 60 ? 'pending' : 'skipped', hour: minutes > 90 ? 'pending' : 'skipped' };
+}
+
+/**
+ * Lembretes que estão na hora de sair: o da véspera a partir de 24 horas antes e o de
+ * "1 hora antes" entre 65 e 15 minutos antes. Fora da janela, o lembrete é dispensado.
+ */
+export function dueReminders(start: Date, now: Date, reminders: Reminders): { send: ReminderKind[]; skip: ReminderKind[] } {
+  const minutes = (start.getTime() - now.getTime()) / 60_000;
+  const send: ReminderKind[] = [];
+  const skip: ReminderKind[] = [];
+  if (reminders.day === 'pending') {
+    if (minutes <= 3 * 60) skip.push('day');
+    else if (minutes <= 24 * 60) send.push('day');
+  }
+  if (reminders.hour === 'pending') {
+    if (minutes < 15) skip.push('hour');
+    else if (minutes <= 65) send.push('hour');
+  }
+  return { send, skip };
+}
