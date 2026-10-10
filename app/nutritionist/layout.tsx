@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { LayoutDashboard, Users, MessageSquareText, MessageSquare, User, Bot } from 'lucide-react';
 import { AppShell, AppLoading, type NavItem } from '@/components/app-shell';
-import { NutritionistAliWidget } from '@/components/nutritionist-ali-widget';
+import { NutritionistAliAssistant } from '@/components/nutritionist-ali-assistant';
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', shortName: 'Início', href: '/nutritionist', icon: LayoutDashboard, inBottomBar: true },
@@ -46,8 +46,8 @@ export default function NutritionistLayout({ children }: { children: React.React
         {children}
       </AppShell>
 
-      {/* ElevenLabs: prévia da Ali com as configurações desta nutricionista */}
-      <NutritionistAliWidget hideOnMobile={hideWidgetOnMobile} />
+      {/* Ali da nutricionista: pacientes, agenda e e-mails dela, por voz ou por texto */}
+      <NutritionistAliAssistant hideOnMobile={hideWidgetOnMobile} />
     </>
   );
 }
