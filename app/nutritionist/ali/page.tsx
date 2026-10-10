@@ -352,6 +352,23 @@ function MinhaAliContent() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Resumo semanal</CardTitle>
+          <CardDescription>
+            Toda segunda de manhã você recebe no seu Gmail as consultas da semana, quem anotou refeições e peso e quem
+            está há dias sem abrir o app. Precisa do Google conectado.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label className="flex items-center gap-3 text-sm text-slate-700 cursor-pointer">
+            <input type="checkbox" className="h-5 w-5 shrink-0 rounded border-slate-300 accent-teal-600" checked={settings.weeklySummary}
+              onChange={(e) => update('weeklySummary', e.target.checked)} />
+            Receber o resumo semanal por e-mail
+          </label>
+        </CardContent>
+      </Card>
+
       {/* No computador o botão flutuante da Ali fica no canto inferior direito: o Salvar vai para a esquerda. */}
       <div className="flex justify-end lg:justify-start">
         <Button onClick={save} disabled={saving} className="gap-2 w-full sm:w-auto h-11">
