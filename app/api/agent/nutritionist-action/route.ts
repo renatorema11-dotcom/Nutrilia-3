@@ -21,10 +21,10 @@ function reply(ok: boolean, speech: string, status = 200, extra: Record<string, 
   return json({ ok, speech, ...extra }, status);
 }
 
-async function audit(db: Firestore, nutritionistId: string, action: Action) {
+async function audit(db: Firestore, nutritionistId: string, action: Action, result: 'completed' | 'failed' = 'completed') {
   try {
     // Só o que foi feito e por quem: o conteúdo de e-mails e compromissos não entra no registro.
-    await db.collection('aiActions').add({ nutritionistId, patientUid: null, actor: 'nutritionist', action, result: 'completed', createdAt: new Date().toISOString() });
+    await db.collection('aiActions').add({ nutritionistId, patientUid: null, actor: 'nutritionist', action, result, createdAt: new Date().toISOString() });
   } catch {
     console.error('Ali da nutricionista: falha ao registrar auditoria.');
   }
@@ -82,6 +82,8 @@ export async function POST(req: Request) {
     return reply(true, result.speech, 200, extra);
   } catch {
     console.error('Ali da nutricionista: ação indisponível.');
+    // Falhas inesperadas entram na contagem do relatório de uso.
+    try { await audit(getAdminDb(), uid, name, 'failed'); } catch { /* o banco pode ser justamente o que falhou */ }
     return reply(false, 'Não consegui fazer isso agora. Tente de novo em instantes.', 500);
   }
 }
