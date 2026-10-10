@@ -8,6 +8,7 @@ import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
 import * as workspace from '@/lib/google-workspace';
 import * as appointments from '@/lib/appointments';
+import * as dailyLog from '@/lib/daily-log';
 
 /** Ações do próprio paciente: segredo do gateway + ID token Firebase verificado. */
 function getAdminApp(): App {
@@ -33,10 +34,12 @@ function secretMatches(provided: string | null, expected: string): boolean {
 }
 
 type Action = 'get_patient_data' | 'log_measurement' | 'log_meal' | 'request_appointment'
-  | 'get_free_slots' | 'book_appointment' | 'send_plan_email' | 'cancel_appointment' | 'reschedule_appointment';
+  | 'get_free_slots' | 'book_appointment' | 'send_plan_email' | 'cancel_appointment' | 'reschedule_appointment'
+  | 'log_water' | 'log_mood';
 
 const ALLOWED_ACTIONS: Action[] = ['get_patient_data', 'log_measurement', 'log_meal', 'request_appointment',
-  'get_free_slots', 'book_appointment', 'send_plan_email', 'cancel_appointment', 'reschedule_appointment'];
+  'get_free_slots', 'book_appointment', 'send_plan_email', 'cancel_appointment', 'reschedule_appointment',
+  'log_water', 'log_mood'];
 
 /** Ações que só leem dados; as demais exigem confirmação explícita do paciente. */
 const READ_ONLY_ACTIONS: Action[] = ['get_patient_data', 'get_free_slots'];
@@ -172,14 +175,55 @@ export async function POST(req: Request) {
         const approvedPlan = approvedPlanOf(patient.currentPlan);
         const planSummary = approvedPlan ? approvedPlan.days.map(day => `${day.name}: `
           + day.meals.map(meal => `${meal.name}${meal.time ? ' às ' + meal.time : ''}: ${meal.items.join(', ')}`).join('; ')).join('. ') : '';
+        // Água e humor ficam no perfil do paciente, o mesmo lugar em que a tela inicial grava.
+        const profileSnap = await db.collection('users').doc(patientUid).get();
+        const profile = (profileSnap.exists ? profileSnap.data() : null) || {};
+        const waterMl = dailyLog.waterToday(profile.waterIntake);
+        const mood = dailyLog.moodToday(profile.moodDiary);
         await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
         return speechResponse(
           `Dados de ${patient.name}: objetivo ${patient.objective || 'não informado'}, ` +
           `peso atual ${patient.weight ?? 'não informado'} kg, meta ${patient.targetWeight ?? 'não informada'} kg, ` +
           `próxima consulta ${patient.nextAppointment || 'não agendada'}. ` +
+          `Água de hoje: ${waterMl} ml de ${dailyLog.WATER_GOAL_ML} ml. ` +
+          `Humor de hoje: ${mood ? dailyLog.MOOD_LABELS[mood] : 'ainda não registrado'}. ` +
           (approvedPlan ? `Plano aprovado: ${planSummary || 'sem refeições detalhadas'}.` : 'Ainda não há plano aprovado disponível.'),
           { patient: { name: patient.name, weight: patient.weight, objective: patient.objective, targetWeight: patient.targetWeight, nextAppointment: patient.nextAppointment }, approvedPlan }
         );
+      }
+
+      case 'log_water': {
+        // setTotal = o paciente disse o total do dia ("já bebi um litro hoje"); sem isso, a quantidade soma.
+        const setTotal = payload.setTotal === true;
+        const amount = numericInput(payload.amountMl);
+        if (!Number.isFinite(amount) || amount < (setTotal ? 0 : 50) || amount > (setTotal ? dailyLog.WATER_MAX_ML : 3000)) {
+          return speechError('Quantidade de água inválida. Pergunte ao paciente quanto ele bebeu, em mililitros ou em copos.', 422);
+        }
+        const userRef = db.collection('users').doc(patientUid);
+        const userSnap = await userRef.get();
+        const before = dailyLog.waterToday(userSnap.exists ? userSnap.data()?.waterIntake : null);
+        const total = Math.min(Math.round(setTotal ? amount : before + amount), dailyLog.WATER_MAX_ML);
+        await userRef.set({ waterIntake: { amount: total, date: dailyLog.dailyKey() } }, { merge: true });
+
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
+        const left = dailyLog.WATER_GOAL_ML - total;
+        return speechResponse(
+          (setTotal ? `Certo! Deixei anotado ${total} ml de água hoje.` : `Anotado! Mais ${Math.round(amount)} ml de água. Hoje você já bebeu ${total} ml.`) +
+          (left > 0 ? ` Faltam ${left} ml para a meta de ${dailyLog.WATER_GOAL_ML} ml.` : ` Você bateu a meta de ${dailyLog.WATER_GOAL_ML} ml de hoje. Parabéns!`),
+        );
+      }
+
+      case 'log_mood': {
+        if (!dailyLog.isMood(payload.mood)) {
+          return speechError('Humor inválido. Pergunte ao paciente como ele está se sentindo hoje: triste, neutro, feliz ou ótimo.', 422);
+        }
+        const mood = payload.mood;
+        await db.collection('users').doc(patientUid).set({ moodDiary: { mood, date: dailyLog.dailyKey() } }, { merge: true });
+
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
+        return speechResponse(mood === 'sad'
+          ? 'Anotei que hoje você não está bem. Sinto muito que o dia esteja difícil. Se quiser, posso te ajudar a marcar uma conversa com a sua nutricionista.'
+          : `Anotei que hoje você está se sentindo ${dailyLog.MOOD_LABELS[mood]}.`);
       }
 
       case 'log_measurement': {
