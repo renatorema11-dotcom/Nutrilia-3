@@ -59,7 +59,10 @@ async function test(name, options, status, inspect = () => {}) {
   assert.equal(res.headers.get('cache-control'), 'no-store', name);
   const acted = events.filter((e) => !['verify', 'profile', 'audit'].includes(e[0]));
   if (status !== 200 && !options.reachesAction) assert.equal(acted.length, 0, `${name}: nenhuma ação pode rodar`);
-  if (status !== 200) assert.ok(!events.some((e) => e[0] === 'audit'), `${name}: sem auditoria em falha`);
+  // Recusas não entram no registro; a falha inesperada entra uma vez, só como 'failed', para o relatório de uso.
+  const audits = events.filter((e) => e[0] === 'audit');
+  if (status !== 200 && status !== 500) assert.equal(audits.length, 0, `${name}: sem auditoria em recusa`);
+  if (status === 500) assert.deepEqual(audits.map((e) => e[2].result), ['failed'], `${name}: falha registrada uma vez`);
   inspect(events, json, acted);
   reports.push(`PASS ${name}`);
 }
@@ -108,8 +111,11 @@ async function test(name, options, status, inspect = () => {}) {
     body: { action: 'create_event', confirmed: true, payload: { title: 'Reunião' } } }, 409, (_, json) => {
     assert.equal(json.speech, 'Você já tem um compromisso nesse horário.');
   });
-  await test('Falha inesperada não vaza detalhes', { reachesAction: true, assistant: { listContacts: async () => { throw new Error('detalhe interno'); } }, body: { action: 'list_contacts' } }, 500, (_, json) => {
+  await test('Falha inesperada não vaza detalhes', { reachesAction: true, assistant: { listContacts: async () => { throw new Error('detalhe interno'); } }, body: { action: 'list_contacts' } }, 500, (events, json) => {
     assert.ok(!json.speech.includes('detalhe interno'));
+    const audit = events.find((e) => e[0] === 'audit');
+    assert.equal(audit[2].action, 'list_contacts');
+    assert.ok(!JSON.stringify(audit[2]).includes('detalhe interno'));
   });
   console.log(reports.join('\n'));
   console.log(`${reports.length} testes de acesso da Ali da nutricionista passaram.`);

@@ -22,6 +22,8 @@ function createFirestore() {
     const key = `${col}/${id}`;
     return {
       id,
+      // Subcoleção, como patients/{id}/foodLogs.
+      collection: (sub) => collectionOf(`${key}/${sub}`),
       get: async () => ({ exists: store.has(key), id, ref: docRef(col, id), data: () => (store.has(key) ? structuredClone(store.get(key)) : undefined) }),
       set: async (data, options) => { store.set(key, structuredClone(merge(options?.merge ? store.get(key) || {} : {}, data))); },
       update: async (data) => {
@@ -49,13 +51,15 @@ function createFirestore() {
     };
   };
   let added = 0;
-  const db = {
-    collection: (col) => ({
+  // Declarada como função para o docRef (acima) poder abrir subcoleções.
+  function collectionOf(col) {
+    return {
       doc: (id) => docRef(col, id),
       where: (field, op, value) => query(col, [[field, op, value]]),
       add: async (data) => { const id = `auto-${++added}`; store.set(`${col}/${id}`, structuredClone(data)); return docRef(col, id); },
-    }),
-  };
+    };
+  }
+  const db = { collection: collectionOf };
   return { store, db, FieldValue: { arrayUnion: (...items) => ({ arrayUnion: items }), delete: () => DELETE } };
 }
 
