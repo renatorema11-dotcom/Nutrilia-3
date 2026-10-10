@@ -7,6 +7,7 @@ export const runtime = 'nodejs';
 import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
 import * as workspace from '@/lib/google-workspace';
+import * as appointments from '@/lib/appointments';
 
 /** Ações do próprio paciente: segredo do gateway + ID token Firebase verificado. */
 function getAdminApp(): App {
@@ -32,10 +33,10 @@ function secretMatches(provided: string | null, expected: string): boolean {
 }
 
 type Action = 'get_patient_data' | 'log_measurement' | 'log_meal' | 'request_appointment'
-  | 'get_free_slots' | 'book_appointment' | 'send_plan_email';
+  | 'get_free_slots' | 'book_appointment' | 'send_plan_email' | 'cancel_appointment' | 'reschedule_appointment';
 
 const ALLOWED_ACTIONS: Action[] = ['get_patient_data', 'log_measurement', 'log_meal', 'request_appointment',
-  'get_free_slots', 'book_appointment', 'send_plan_email'];
+  'get_free_slots', 'book_appointment', 'send_plan_email', 'cancel_appointment', 'reschedule_appointment'];
 
 /** Ações que só leem dados; as demais exigem confirmação explícita do paciente. */
 const READ_ONLY_ACTIONS: Action[] = ['get_patient_data', 'get_free_slots'];
@@ -290,6 +291,23 @@ export async function POST(req: Request) {
         if (!result.ok) return speechError(result.speech, result.status);
         await audit(db, patientUid, patient.nutritionistId, action);
         return speechResponse(result.speech);
+      }
+
+      case 'cancel_appointment': {
+        const result = await appointments.cancelNextAppointment(db, patientUid);
+        if (!result.ok) return speechError(result.speech, result.status);
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
+        return speechResponse(result.speech, { appointment: result.appointment });
+      }
+
+      case 'reschedule_appointment': {
+        if (typeof payload.start !== 'string' || payload.start.length > 40) {
+          return speechError('Escolha um dos horários livres que eu informei.', 422);
+        }
+        const result = await appointments.rescheduleNextAppointment(db, patientUid, payload.start);
+        if (!result.ok) return speechError(result.speech, result.status);
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
+        return speechResponse(result.speech, { appointment: result.appointment });
       }
     }
   } catch {
