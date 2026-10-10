@@ -114,9 +114,16 @@ async function cancelStored(db: Firestore, a: StoredAppointment, by: 'patient' |
     ok: true,
     speech: by === 'patient'
       ? `Pronto, cancelei a sua consulta de ${a.label}. O horário foi liberado e eu avisei ${nutriName}. Quer marcar outro horário?`
-      : 'Consulta cancelada. O horário foi liberado na agenda do Google.',
+      : `Consulta de ${a.patientName} de ${a.label} cancelada. O horário foi liberado na agenda do Google${a.patientEmail ? ' e o paciente foi avisado por e-mail' : ''}.`,
     appointment: { label: a.label, start: a.startLocal, status: 'cancelled' },
   };
+}
+
+/** Pedido da nutricionista à Ali dela: cancela a próxima consulta que ela tem com esse paciente. */
+export async function cancelNextByNutritionist(db: Firestore, nutritionistId: string, patientUid: string, now = new Date()): Promise<ActionResult> {
+  const next = (await upcomingForPatient(db, patientUid, now)).find((a) => a.nutritionistId === nutritionistId);
+  if (!next) return { ok: false, status: 409, speech: 'Não encontrei consulta marcada pela Ali com esse paciente.' };
+  return cancelStored(db, next, 'nutritionist', now);
 }
 
 /** Pedido por voz: cancela a próxima consulta do paciente. */

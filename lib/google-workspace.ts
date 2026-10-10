@@ -380,9 +380,31 @@ export async function bookAppointment(db: Firestore, input: BookingInput): Promi
 
   const mode = settings.mode === 'ambos' ? (input.mode === 'presencial' ? 'presencial' : 'online') : settings.mode;
   const notes = typeof input.notes === 'string' ? input.notes.trim().slice(0, 500) : '';
+  return createAppointment(db, access, settings, { ...input, start, end, mode, notes, bookedBy: 'patient' }, now);
+}
+
+export interface NewAppointment {
+  nutritionistId: string;
+  patientUid: string;
+  patientName: string;
+  patientEmail: string | null;
+  start: Date;
+  end: Date;
+  mode: 'online' | 'presencial';
+  notes: string;
+  /** Quem marcou: muda os avisos por e-mail e a resposta falada. */
+  bookedBy: 'patient' | 'nutritionist';
+}
+
+/** Cria a consulta na agenda do Google, registra no app e avisa por e-mail. Quem chama já conferiu o horário. */
+export async function createAppointment(db: Firestore, access: { token: string; email: string }, settings: AliSettings, input: NewAppointment, now: Date): Promise<ActionResult> {
+  const { start, end, mode, notes } = input;
+  const tz = settings.timezone;
+  const minutes = Math.round((end.getTime() - start.getTime()) / 60_000);
+  const byPatient = input.bookedBy === 'patient';
   const event: Record<string, unknown> = {
     summary: `Consulta nutricional — ${input.patientName || 'Paciente'}`,
-    description: `Consulta marcada pela Ali (NutriAli).${notes ? `\nObservações do paciente: ${notes}` : ''}`,
+    description: `Consulta marcada pela Ali (NutriAli).${notes ? `\n${byPatient ? 'Observações do paciente' : 'Observações'}: ${notes}` : ''}`,
     start: { dateTime: toOffsetIso(start, tz), timeZone: tz },
     end: { dateTime: toOffsetIso(end, tz), timeZone: tz },
     reminders: { useDefault: true },
@@ -462,7 +484,7 @@ export async function bookAppointment(db: Firestore, input: BookingInput): Promi
         subject: `Consulta confirmada: ${label}`,
         html: emailLayout('Sua consulta está confirmada', [
           p(`Olá, ${escapeHtml(input.patientName || '')}!`),
-          p(`Sua consulta com ${escapeHtml(nutriName)} está marcada para <strong>${escapeHtml(label)}</strong>, com duração de ${settings.durationMinutes} minutos.`),
+          p(`Sua consulta com ${escapeHtml(nutriName)} está marcada para <strong>${escapeHtml(label)}</strong>, com duração de ${minutes} minutos.`),
           p(where),
           p('Se precisar remarcar ou cancelar, é só pedir para a Ali no aplicativo.'),
           settings.contact ? p(`Para falar com ${escapeHtml(nutriName)}: ${escapeHtml(settings.contact)}.`) : '',
@@ -474,13 +496,22 @@ export async function bookAppointment(db: Firestore, input: BookingInput): Promi
       console.error('Ali: falha ao enviar confirmação ao paciente.');
     }
   }
+  if (!byPatient) {
+    // Foi a própria nutricionista que marcou: não precisa de aviso para ela.
+    return {
+      ok: true,
+      speech: `Pronto! Marquei a consulta de ${input.patientName || 'paciente'} para ${label}, ${mode === 'presencial' ? 'presencial' : 'online, pelo Google Meet'}. `
+        + (patientMailed ? 'A confirmação foi para o e-mail do paciente.' : 'Esse paciente não tem e-mail cadastrado, então avise por outro meio.'),
+      appointment: { label, start: toOffsetIso(start, tz), mode },
+    };
+  }
   try {
     await sendMail(access.token, {
       fromName: 'Ali — NutriAli', fromEmail: access.email, to: access.email,
       subject: `Ali marcou uma consulta: ${input.patientName || 'Paciente'} — ${label}`,
       html: emailLayout('Nova consulta marcada pela Ali', [
         p(`<strong>Paciente:</strong> ${escapeHtml(input.patientName || 'Paciente')}${input.patientEmail ? ` (${escapeHtml(input.patientEmail)})` : ''}`),
-        p(`<strong>Quando:</strong> ${escapeHtml(label)} (${settings.durationMinutes} minutos), ${escapeHtml(describeMode(mode as AliSettings['mode']))}.`),
+        p(`<strong>Quando:</strong> ${escapeHtml(label)} (${minutes} minutos), ${escapeHtml(describeMode(mode as AliSettings['mode']))}.`),
         p(where),
         notes ? p(`<strong>Observações do paciente:</strong> ${escapeHtml(notes)}`) : '',
         created.htmlLink ? p(`<a href="${escapeHtml(created.htmlLink)}" style="color:#276e58">Abrir na Agenda do Google</a>`) : '',

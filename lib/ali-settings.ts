@@ -107,7 +107,63 @@ export function sanitizeAliSettings(input: unknown, base: AliSettings = defaultA
   };
 }
 
-function joinPt(items: string[]): string {
+/** Contato salvo pela nutricionista para a Ali dela enviar e-mails (ex.: laboratório, colega). */
+export interface AliContact { name: string; email: string }
+
+export const MAX_CONTACTS = 50;
+
+const CONTACT_EMAIL_RE = /^[^\s@<>"',;:()\[\]\\]+@[^\s@<>"',;:()\[\]\\]+\.[^\s@<>"',;:()\[\]\\]+$/;
+
+/** Valida a lista de contatos: nome e e-mail válidos, sem e-mail repetido. */
+export function sanitizeContacts(input: unknown): AliContact[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const contacts: AliContact[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const raw = item as Record<string, unknown>;
+    const name = cleanText(raw.name, ALI_LIMITS.name).replace(/\s+/g, ' ');
+    const email = typeof raw.email === 'string' ? raw.email.trim().toLowerCase() : '';
+    if (!name || email.length > 254 || !CONTACT_EMAIL_RE.test(email) || seen.has(email)) continue;
+    seen.add(email);
+    contacts.push({ name, email });
+    if (contacts.length >= MAX_CONTACTS) break;
+  }
+  return contacts;
+}
+
+/** Sem acento e em minúsculas, para comparar nomes ditos em voz alta. */
+export function normalizeName(value: string): string {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+const NAME_FILLERS = new Set(['dr', 'dra', 'doutor', 'doutora', 'sr', 'sra', 'senhor', 'senhora', 'o', 'a', 'do', 'da', 'de', 'dos', 'das', 'e']);
+
+/**
+ * Procura pessoas pelo nome falado. O nome inteiro igual vence; senão, todas as palavras
+ * ditas precisam aparecer no nome. Mais de um resultado significa que a Ali deve perguntar qual.
+ */
+export function matchByName<T extends { name: string }>(people: T[], spoken: string): T[] {
+  const query = normalizeName(spoken);
+  if (!query) return [];
+  const exact = people.filter((person) => normalizeName(person.name) === query);
+  if (exact.length) return exact;
+  const words = query.split(' ').filter((word) => !NAME_FILLERS.has(word));
+  if (!words.length) return [];
+  const wholeWords = people.filter((person) => {
+    const name = ` ${normalizeName(person.name)} `;
+    return words.every((word) => name.includes(` ${word} `));
+  });
+  if (wholeWords.length) return wholeWords;
+  // A voz às vezes corta o fim do nome: aceita o começo das palavras.
+  return people.filter((person) => {
+    const name = ` ${normalizeName(person.name)}`;
+    return words.every((word) => word.length >= 3 && name.includes(` ${word}`));
+  });
+}
+
+/** "A, B e C" */
+export function joinPt(items: string[]): string {
   if (items.length <= 1) return items.join('');
   return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`;
 }

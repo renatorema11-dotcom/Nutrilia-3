@@ -57,6 +57,41 @@ export function slotLabel(date: Date, timeZone: string): string {
   return `${day}, às ${time}`;
 }
 
+/** "2026-10-14": o dia de um instante no fuso informado. */
+export function localDateKey(date: Date, timeZone: string): string {
+  const p = zonedParts(date, timeZone);
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
+}
+
+/** Instante de uma data e hora locais ("2026-10-15", "14:30" ou "14h30"); null se não for uma data válida. */
+export function parseLocalDateTime(date: unknown, time: unknown, timeZone: string): Date | null {
+  if (typeof date !== 'string' || typeof time !== 'string') return null;
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
+  const t = /^([01]?\d|2[0-3])(?:[:h]([0-5]\d))?h?$/.exec(time.trim().toLowerCase());
+  if (!d || !t) return null;
+  const result = zonedToDate(Number(d[1]), Number(d[2]), Number(d[3]), Number(t[1]), Number(t[2] || 0), timeZone);
+  // 31 de fevereiro e parecidos "rolam" para o mês seguinte: não aceita.
+  const check = zonedParts(result, timeZone);
+  return check.month === Number(d[2]) && check.day === Number(d[3]) ? result : null;
+}
+
+/**
+ * Hoje e os próximos dias com a data já no formato das ações ("quinta-feira, 15 de outubro = 2026-10-15"),
+ * para a Ali não precisar calcular "quinta que vem" de cabeça.
+ */
+export function describeDates(now: Date, timeZone: string, days = 14): string {
+  const today = zonedParts(now, timeZone);
+  const anchor = zonedToDate(today.year, today.month, today.day, 12, 0, timeZone).getTime();
+  const dayName = new Intl.DateTimeFormat('pt-BR', { timeZone, weekday: 'long', day: 'numeric', month: 'long' });
+  const list: string[] = [];
+  for (let offset = 0; offset <= days; offset++) {
+    const date = new Date(anchor + offset * DAY_MS);
+    const prefix = offset === 0 ? 'hoje, ' : offset === 1 ? 'amanhã, ' : '';
+    list.push(`${prefix}${dayName.format(date)} = ${localDateKey(date, timeZone)}`);
+  }
+  return `Agora são ${pad(today.hour)}:${pad(today.minute)} de ${dayName.format(now)} de ${today.year}. Datas: ${list.join('; ')}.`;
+}
+
 function minutesOf(value: string): number {
   const [h, m] = value.split(':').map(Number);
   return h * 60 + m;
