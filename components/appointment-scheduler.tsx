@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Badge } from '@/components/ui';
-import { Calendar as CalendarIcon, Clock, Plus, Trash2, CalendarPlus } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, Trash2, CalendarPlus, Video } from 'lucide-react';
 import { format, parseISO, isAfter, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { auth } from '@/lib/firebase';
 import { AliAppointmentRequests } from './ali-appointment-requests';
 
 export type Appointment = {
@@ -16,6 +17,9 @@ export type Appointment = {
   time: string; // HH:mm
   type: 'Primeira' | 'Retorno';
   status: 'Agendada' | 'Concluída' | 'Cancelada';
+  // Consultas marcadas pela Ali também existem na agenda do Google da nutricionista.
+  source?: string;
+  meetLink?: string;
 };
 
 export function AppointmentScheduler({ 
@@ -87,8 +91,31 @@ export function AppointmentScheduler({
     setIsFormOpen(false);
   };
 
-  const handleCancel = (id: string) => {
-    saveAppointments(appointments.map(a => a.id === id ? { ...a, status: 'Cancelada' } : a));
+  const handleCancel = async (id: string) => {
+    const cancelled = appointments.map(a => a.id === id ? { ...a, status: 'Cancelada' as const } : a);
+    if (user && appointments.find(a => a.id === id)?.source === 'ali') {
+      // O servidor tira a consulta da agenda do Google, atualiza as duas listas e avisa a outra parte.
+      if (!window.confirm('Cancelar esta consulta? Ela sai da agenda do Google e a outra pessoa é avisada.')) return;
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch('/api/appointments/cancel', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          window.alert(typeof data.error === 'string' ? data.error : 'Não foi possível cancelar agora.');
+          return;
+        }
+      } catch {
+        window.alert('Não foi possível cancelar agora.');
+        return;
+      }
+      setAppointments(cancelled);
+      return;
+    }
+    saveAppointments(cancelled);
   };
 
   const handleExportIcs = (appt: Appointment) => {
@@ -224,7 +251,8 @@ END:VCALENDAR`;
           ) : (
             <div className="space-y-3">
               {upcomingAppointments.map(appt => (
-                <div key={appt.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 border border-slate-200 rounded-lg bg-white shadow-sm hover:border-teal-200 transition-colors gap-3">
+                // sm:flex-wrap: em colunas estreitas (painel da nutricionista) os botões descem para a linha de baixo em vez de ficarem cortados.
+                <div key={appt.id} className="flex flex-col sm:flex-row sm:flex-wrap justify-between sm:items-center p-3 border border-slate-200 rounded-lg bg-white shadow-sm hover:border-teal-200 transition-colors gap-3">
                   <div className="flex items-start sm:items-center gap-3">
                     <div className="bg-teal-50 p-2 rounded-md">
                       <CalendarIcon className="w-4 h-4 text-teal-600" />
@@ -240,12 +268,23 @@ END:VCALENDAR`;
                     </div>
                   </div>
                   
-                  <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                  <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto sm:ml-auto">
                     <Badge variant={appt.type === 'Retorno' ? 'warning' : 'default'} className="text-[10px]">
                       {appt.type}
                     </Badge>
                     <div className="flex items-center gap-1">
-                      <button 
+                      {appt.meetLink && (
+                        <a
+                          href={appt.meetLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-teal-600 hover:text-teal-700 p-1.5 bg-teal-50 hover:bg-teal-100 rounded transition-colors"
+                          title="Entrar na chamada"
+                        >
+                          <Video className="w-4 h-4" />
+                        </a>
+                      )}
+                      <button
                         onClick={() => handleExportIcs(appt)}
                         className="text-teal-600 hover:text-teal-700 p-1.5 bg-teal-50 hover:bg-teal-100 rounded transition-colors"
                         title="Adicionar ao Calendário"
