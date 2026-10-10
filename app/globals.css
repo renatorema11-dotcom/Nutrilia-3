@@ -59,18 +59,6 @@ body {
   }
 }
 
-/* Botão flutuante da ElevenLabs (painel da nutricionista): no celular fica acima da barra inferior.
-   O próprio elemento ocupa a tela em position: fixed; reduzir o "bottom" sobe o conteúdo dele. */
-@media (max-width: 1023px) {
-  elevenlabs-convai {
-    bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
-  }
-
-  elevenlabs-convai.convai-hide-mobile {
-    display: none;
-  }
-}
-
 .mesh-bg {
   position: fixed;
   top: 0;
