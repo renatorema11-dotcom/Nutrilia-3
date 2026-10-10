@@ -23,7 +23,13 @@ async function test(name,options,status,inspect=()=>{}) {
     sendPlanEmail:async (db,input)=>{events.push(['plan-mail',input]);return {ok:true,speech:'Plano enviado.'};},
     ...options.workspace,
   };
-  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,
+  // Cancelar e remarcar simulados: registram as chamadas e devolvem respostas fixas.
+  const appointments={
+    cancelNextAppointment:async (db,uid)=>{events.push(['cancel',uid]);return {ok:true,speech:'Consulta cancelada.',appointment:{label:'terça',status:'cancelled'}};},
+    rescheduleNextAppointment:async (db,uid,start)=>{events.push(['reschedule',uid,start]);return {ok:true,speech:'Consulta remarcada.',appointment:{label:'quarta',start,mode:'online'}};},
+    ...options.appointments,
+  };
+  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,appointments,
     NextResponse:{json:(body,init={})=>({body,status:init.status||200,headers:init.headers})},
     getApps:()=>[],cert:a=>a,initializeApp:()=>({name:'test'}),
     getAuth:()=>({verifyIdToken:async(token,revocation)=>{
@@ -63,7 +69,7 @@ async function test(name,options,status,inspect=()=>{}) {
   await test('Corpo nulo', {rawBody:'null'},400,noDb);
   await test('Payload inválido', {body:{action:'get_patient_data',payload:[]}},400,noDb);
   await test('Ação fora da allowlist', {body:{action:'delete_patient'}},400,noDb);
-  for(const action of ['log_meal','log_measurement','request_appointment','book_appointment','send_plan_email']) {
+  for(const action of ['log_meal','log_measurement','request_appointment','book_appointment','send_plan_email','cancel_appointment','reschedule_appointment']) {
     await test('Exige confirmação: '+action,{body:{action,payload:{}}},422,noDb);
   }
   await test('Consulta usa UID verificado e banco nomeado',{},200,(ev,res)=>{
@@ -127,6 +133,20 @@ async function test(name,options,status,inspect=()=>{}) {
   });
   await test('Rascunho não vai por e-mail',{patient:{currentPlan:{status:'draft',days:[{name:'rascunho secreto',meals:[]}]}},body:{action:'send_plan_email',confirmed:true}},200,ev=>{
     assert.equal(ev.find(e=>e[0]==='plan-mail')[1].days.length,0);
+  });
+  await test('Cancelar consulta vale só para o paciente autenticado',{body:{action:'cancel_appointment',confirmed:true,payload:{patientUid:'patient-B'}}},200,(ev,res)=>{
+    assert.equal(ev.find(e=>e[0]==='cancel')[1],'patient-A');
+    assert.equal(res.body.appointment.status,'cancelled');
+  });
+  await test('Sem consulta para cancelar chega à Ali com o status certo',{appointments:{cancelNextAppointment:async()=>({ok:false,status:409,speech:'Não encontrei consulta.'})},body:{action:'cancel_appointment',confirmed:true}},409,(_,res)=>{
+    assert.equal(res.body.speech,'Não encontrei consulta.');
+  });
+  await test('Remarcar consulta exige horário em texto',{body:{action:'reschedule_appointment',confirmed:true,payload:{start:5}}},422);
+  await test('Remarcar consulta repassa o horário escolhido',{body:{action:'reschedule_appointment',confirmed:true,payload:{start:'2026-10-14T14:00:00-03:00'}}},200,(ev,res)=>{
+    const call=ev.find(e=>e[0]==='reschedule');
+    assert.equal(call[1],'patient-A');
+    assert.equal(call[2],'2026-10-14T14:00:00-03:00');
+    assert.equal(res.body.appointment.start,'2026-10-14T14:00:00-03:00');
   });
   console.log(reports.join('\n'));
   console.log('Firebase Admin e Firestore simulados; assinatura real e integração entre serviços exigem teste separado.');

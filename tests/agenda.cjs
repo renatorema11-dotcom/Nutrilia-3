@@ -84,4 +84,42 @@ check('descreve o atendimento em português', () => {
   assert.ok(t('describeAttendance(settings)').startsWith('segunda a sexta, das 08:00 às 18:00, consultas de 50 minutos'));
 });
 
+check('remarcar: o horário de antes deixa de contar como ocupado', () => {
+  context.busy = [{ start: new Date('2026-10-13T11:00:00Z'), end: new Date('2026-10-13T13:00:00Z') }];
+  context.old = { start: new Date('2026-10-13T12:00:00Z'), end: new Date('2026-10-13T12:50:00Z') };
+  const parts = Array.from(t('withoutInterval(busy, old)'), (b) => [b.start.toISOString(), b.end.toISOString()]);
+  assert.deepEqual(parts, [
+    ['2026-10-13T11:00:00.000Z', '2026-10-13T12:00:00.000Z'],
+    ['2026-10-13T12:50:00.000Z', '2026-10-13T13:00:00.000Z'],
+  ]);
+  context.old = { start: new Date('2026-10-14T12:00:00Z'), end: new Date('2026-10-14T12:50:00Z') };
+  assert.equal(t('withoutInterval(busy, old)').length, 1);
+});
+
+check('lembretes: não lembra do que acabou de ser marcado', () => {
+  context.start = new Date('2026-10-14T17:00:00Z');
+  const states = (at) => { context.at = new Date(at); const r = t('initialReminders(start, at)'); return [r.day, r.hour]; };
+  assert.deepEqual(states('2026-10-12T12:00:00Z'), ['pending', 'pending']);
+  assert.deepEqual(states('2026-10-14T03:00:00Z'), ['skipped', 'pending']);
+  assert.deepEqual(states('2026-10-14T16:00:00Z'), ['skipped', 'skipped']);
+});
+
+check('lembretes: véspera a partir de 24 horas e aviso perto de 1 hora antes', () => {
+  context.start = new Date('2026-10-14T17:00:00Z');
+  const due = (at, day, hour) => {
+    context.at = new Date(at);
+    context.reminders = { day, hour };
+    const r = t('dueReminders(start, at, reminders)');
+    return [Array.from(r.send).join('+'), Array.from(r.skip).join('+')];
+  };
+  assert.deepEqual(due('2026-10-13T16:50:00Z', 'pending', 'pending'), ['', '']);
+  assert.deepEqual(due('2026-10-13T17:05:00Z', 'pending', 'pending'), ['day', '']);
+  assert.deepEqual(due('2026-10-13T17:15:00Z', 'sent', 'pending'), ['', '']);
+  assert.deepEqual(due('2026-10-14T15:58:00Z', 'sent', 'pending'), ['hour', '']);
+  assert.deepEqual(due('2026-10-14T16:05:00Z', 'sent', 'sent'), ['', '']);
+  // O serviço ficou parado: lembrete atrasado demais é dispensado, não enviado fora de hora.
+  assert.deepEqual(due('2026-10-14T16:50:00Z', 'pending', 'pending'), ['', 'day+hour']);
+  assert.deepEqual(due('2026-10-14T16:00:00Z', 'pending', 'pending'), ['hour', 'day']);
+});
+
 console.log(`${count} verificações da agenda da Ali passaram. Nenhum serviço externo foi chamado.`);
