@@ -54,13 +54,13 @@ function numericInput(value: unknown): number {
     ? Number(value.trim().replace(',', '.')) : NaN;
 }
 
-async function audit(db: Firestore, patientUid: string, nutritionistId: string | null, action: Action) {
+async function audit(db: Firestore, patientUid: string, nutritionistId: string | null, action: Action, result: 'completed' | 'failed' = 'completed') {
   try {
     await db.collection('aiActions').add({
       patientUid,
       nutritionistId,
       action,
-      result: 'completed', // Não duplicar dados de saúde nem tokens no log de auditoria.
+      result, // Não duplicar dados de saúde nem tokens no log de auditoria.
       createdAt: new Date().toISOString(),
     });
   } catch {
@@ -312,6 +312,8 @@ export async function POST(req: Request) {
     }
   } catch {
     console.error('Ali: ação indisponível.');
+    // Falhas inesperadas entram na contagem do relatório de uso.
+    try { await audit(getAdminDb(), patientUid, null, action, 'failed'); } catch { /* o banco pode ser justamente o que falhou */ }
     return speechError('Não consegui executar essa ação agora. Tenta de novo em instantes.', 500);
   }
 }
