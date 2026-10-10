@@ -2,11 +2,11 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Bot, CalendarCheck, CheckCircle2, Loader2, Mail, Save, Unplug, AlertTriangle } from 'lucide-react';
+import { Bot, CalendarCheck, CheckCircle2, Loader2, Mail, Plus, Save, Trash2, Unplug, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button } from '@/components/ui';
 import { useAuth } from '@/components/auth-provider';
 import { auth } from '@/lib/firebase';
-import { ALI_LIMITS, WEEKDAY_NAMES, defaultAliSettings, describeAttendance, type AliSettings, type ConsultationMode } from '@/lib/ali-settings';
+import { ALI_LIMITS, MAX_CONTACTS, WEEKDAY_NAMES, defaultAliSettings, describeAttendance, sanitizeContacts, type AliContact, type AliSettings, type ConsultationMode } from '@/lib/ali-settings';
 
 interface GoogleStatus { configured: boolean; connected: boolean; email: string; needsReconnect: boolean }
 
@@ -44,12 +44,16 @@ function MinhaAliContent() {
   const [saving, setSaving] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(GOOGLE_MESSAGES[params.get('google') || ''] || null);
+  const [contacts, setContacts] = useState<AliContact[]>([]);
+  const [newContact, setNewContact] = useState<AliContact>({ name: '', email: '' });
+  const [contactError, setContactError] = useState('');
 
   const load = useCallback(async () => {
     try {
       const data = await api('/api/nutritionist/ali-settings');
       setSettings(data.settings);
       setGoogle(data.google);
+      setContacts(Array.isArray(data.contacts) ? data.contacts : []);
     } catch (e) {
       setNotice({ ok: false, text: e instanceof Error && e.message !== 'sessão' ? e.message : 'Não foi possível carregar suas configurações.' });
     } finally {
@@ -66,12 +70,24 @@ function MinhaAliContent() {
   const toggleDay = (day: number) => update('workDays',
     settings.workDays.includes(day) ? settings.workDays.filter((d) => d !== day) : [...settings.workDays, day].sort((a, b) => a - b));
 
+  const addContact = () => {
+    // A mesma validação do servidor: o contato só entra se o nome e o e-mail forem válidos e novos.
+    const [valid] = sanitizeContacts([newContact]);
+    if (!valid) { setContactError('Preencha o nome e um e-mail válido.'); return; }
+    if (contacts.some((contact) => contact.email === valid.email)) { setContactError('Esse e-mail já está na lista.'); return; }
+    if (contacts.length >= MAX_CONTACTS) { setContactError(`A lista aceita até ${MAX_CONTACTS} contatos.`); return; }
+    setContacts([...contacts, valid]);
+    setNewContact({ name: '', email: '' });
+    setContactError('');
+  };
+
   const save = async () => {
     setSaving(true);
     setNotice(null);
     try {
-      const data = await api('/api/nutritionist/ali-settings', { method: 'PUT', body: JSON.stringify({ settings }) });
+      const data = await api('/api/nutritionist/ali-settings', { method: 'PUT', body: JSON.stringify({ settings, contacts }) });
       setSettings(data.settings);
+      setContacts(Array.isArray(data.contacts) ? data.contacts : []);
       setNotice({ ok: true, text: 'Configurações salvas. A Ali usa as novas informações a partir da próxima conversa.' });
     } catch (e) {
       setNotice({ ok: false, text: e instanceof Error ? e.message : 'Não foi possível salvar.' });
@@ -290,6 +306,49 @@ function MinhaAliContent() {
             value={settings.guidelines} onChange={(e) => update('guidelines', e.target.value)}
             placeholder="Ex.: Seja bem motivadora. Lembre de beber água e de não pular o café da manhã. Meus pacientes têm foco em reeducação alimentar, sem dietas restritivas." />
           <p className="text-xs text-slate-500 text-right">{settings.guidelines.length}/{ALI_LIMITS.guidelines}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Contatos da sua Ali</CardTitle>
+          <CardDescription>
+            A sua Ali (o botão &ldquo;Ali&rdquo; no canto da tela) manda e-mails e convites a seu pedido, mas só para os seus
+            pacientes e para os contatos desta lista. Ex.: laboratório, outro profissional.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {contacts.length > 0 && (
+            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white/70">
+              {contacts.map((contact) => (
+                <li key={contact.email} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{contact.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{contact.email}</p>
+                  </div>
+                  <button type="button" onClick={() => setContacts(contacts.filter((c) => c.email !== contact.email))}
+                    aria-label={`Remover ${contact.name}`} className="shrink-0 p-2 rounded-lg text-red-500 hover:bg-red-50">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 sm:items-end">
+            <div>
+              <label htmlFor="contact-name" className={labelClass}>Nome</label>
+              <input id="contact-name" className={inputClass} maxLength={ALI_LIMITS.name} value={newContact.name}
+                placeholder="Ex.: Laboratório Vida" onChange={(e) => setNewContact({ ...newContact, name: e.target.value })} />
+            </div>
+            <div>
+              <label htmlFor="contact-email" className={labelClass}>E-mail</label>
+              <input id="contact-email" type="email" className={inputClass} maxLength={254} value={newContact.email}
+                placeholder="contato@exemplo.com" onChange={(e) => setNewContact({ ...newContact, email: e.target.value })} />
+            </div>
+            <Button type="button" variant="outline" onClick={addContact} className="gap-2 h-[42px]"><Plus className="w-4 h-4" /> Adicionar</Button>
+          </div>
+          {contactError && <p role="alert" className="text-sm text-red-700">{contactError}</p>}
+          <p className="text-xs text-slate-500">A lista só é guardada quando você clica em Salvar configurações.</p>
         </CardContent>
       </Card>
 
