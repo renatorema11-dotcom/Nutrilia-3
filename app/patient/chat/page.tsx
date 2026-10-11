@@ -5,6 +5,7 @@ import { Card, CardContent, Input, Button } from '@/components/ui';
 import { Send, Bot, User } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData } from '@/lib/db';
+import { ApiError, postJson } from '@/lib/api-client';
 import { ElevenLabsAgent } from '@/components/elevenlabs-agent';
 
 interface Message {
@@ -69,23 +70,17 @@ export default function PatientChat() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/gemini/chat/patient', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [...messages, { role: 'user', text: userMessage }],
-          context: patientContext
-        })
+      const data = await postJson('/api/gemini/chat/patient', {
+        messages: [...messages, { role: 'user', text: userMessage }],
+        context: patientContext
       });
-
-      const data = await res.json();
 
       if (data.text) {
         setMessages(prev => [...prev, { role: 'ai', text: data.text }]);
       }
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'ai', text: 'Desculpe, ocorreu um erro ao tentar responder. Tente novamente.' }]);
+      setMessages(prev => [...prev, { role: 'ai', text: error instanceof ApiError ? error.message : 'Desculpe, ocorreu um erro ao tentar responder. Tente novamente.' }]);
     } finally {
       setIsLoading(false);
     }
