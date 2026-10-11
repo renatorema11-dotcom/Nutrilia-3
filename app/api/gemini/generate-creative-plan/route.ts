@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { generateGeminiContent } from "@/lib/gemini";
+import { clip, guardAi } from "@/lib/ai-guard";
 
-export async function POST(req: NextRequest) {
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
   const fallbackPlan = `### Plano Criativo de 1 Dia (Sugestão Saudável)
 
 - **Café da Manhã (08:00):** Ovos mexidos com espinafre, 1 fatia de pão integral e chá verde ou café sem açúcar.
@@ -10,11 +13,19 @@ export async function POST(req: NextRequest) {
 - **Jantar (19:30):** Sopa nutritiva de abóbora com frango desfiado e um leve toque de gengibre.
 - **Ceia (22:00):** Infusão relaxante de camomila com uma porção leve de castanhas ou amêndoas.`;
 
-  try {
-    const data = await req.json();
-    const { name, age, weight, height, objective, observations } = data;
+  // Só o paciente logado pede, com limite de pedidos e de tamanho.
+  const guard = await guardAi(req, { roles: ['patient'], scope: 'creative-plan', limit: 10, maxChars: 20_000 });
+  if (!guard.ok) return guard.response;
 
-    const prompt = `Você é um nutricionista criativo e especialista. 
+  try {
+    const name = clip(guard.body.name, 120);
+    const age = clip(guard.body.age, 10);
+    const weight = clip(guard.body.weight, 10);
+    const height = clip(guard.body.height, 10);
+    const objective = clip(guard.body.objective, 200);
+    const observations = clip(guard.body.observations, 2000);
+
+    const prompt = `Você é um nutricionista criativo e especialista.
 Baseado nas seguintes informações do paciente:
 - Nome: ${name || 'Paciente'}
 - Idade: ${age || 'N/A'}
@@ -38,4 +49,3 @@ Formate a resposta em Markdown limpo, sem marcações ou introduções genérica
     return NextResponse.json({ text: fallbackPlan });
   }
 }
-
