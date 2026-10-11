@@ -1,14 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { generateGeminiContent } from "@/lib/gemini";
+import { clip, guardAi, parseImage } from "@/lib/ai-guard";
 
-export async function POST(req: NextRequest) {
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
   const fallbackJson = {
     status: "positive",
     feedback: "Excelente registro! Manter o acompanhamento diário das suas refeições é um passo fundamental para atingir seu objetivo com saúde."
   };
 
+  // Só o paciente logado envia, com limite de pedidos; a foto cabe em até cerca de 6 MB.
+  const guard = await guardAi(req, { roles: ['patient'], scope: 'analyze-food', limit: 20, maxChars: 8_500_000 });
+  if (!guard.ok) return guard.response;
+
   try {
-    const { mealName, plannedItems, actualNotes, image, objective } = await req.json();
+    const mealName = clip(guard.body.mealName, 120);
+    const plannedItems = clip(Array.isArray(guard.body.plannedItems) ? guard.body.plannedItems.join(', ') : guard.body.plannedItems, 2000);
+    const actualNotes = clip(guard.body.actualNotes, 2000);
+    const objective = clip(guard.body.objective, 200);
+    // Só JPEG, PNG ou WebP: outro tipo de arquivo não segue para a IA.
+    const image = parseImage(guard.body.image);
+    if (guard.body.image && !image) return NextResponse.json({ error: 'Envie a foto em JPG, PNG ou WebP.' }, { status: 422 });
 
     const prompt = `Você é um nutricionista analítico e amigável.
 O paciente tem o objetivo de: "${objective}".
@@ -27,22 +40,7 @@ JSON esperado:
   "feedback": "Texto do feedback"
 }`;
 
-    let contents: any = prompt;
-    
-    if (image) {
-      const mimeType = image.substring(5, image.indexOf(';'));
-      const base64Data = image.substring(image.indexOf(',') + 1);
-      
-      contents = [
-        prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType
-          }
-        }
-      ];
-    }
+    const contents = image ? [prompt, { inlineData: { data: image.data, mimeType: image.mimeType } }] : prompt;
 
     const result = await generateGeminiContent({
       model: "gemini-2.5-flash",
@@ -61,4 +59,3 @@ JSON esperado:
     return NextResponse.json(fallbackJson);
   }
 }
-
