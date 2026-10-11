@@ -28,10 +28,13 @@ export class AiError extends Error {
 }
 
 export interface AiImage { mimeType: string; data: string }
+export interface AiTurn { role: 'user' | 'assistant'; text: string }
 
 export interface AiRequest {
   /** Papel e regras da IA nesta função. */
   system?: string;
+  /** Falas anteriores da conversa, da mais antiga para a mais nova, para a IA lembrar do que já foi dito. */
+  history?: AiTurn[];
   prompt: string;
   /** Foto em base64 (JPEG, PNG ou WebP), já validada. */
   image?: AiImage | null;
@@ -98,7 +101,11 @@ async function callGroq(request: AiRequest, apiKey: string): Promise<string> {
           { type: 'image_url', image_url: { url: `data:${request.image.mimeType};base64,${request.image.data}` } },
         ],
       }]
-    : [...(request.system ? [{ role: 'system', content: request.system }] : []), { role: 'user', content: request.prompt }];
+    : [
+        ...(request.system ? [{ role: 'system', content: request.system }] : []),
+        ...(request.history || []).map((turn) => ({ role: turn.role, content: turn.text })),
+        { role: 'user', content: request.prompt },
+      ];
   const basic = { model, messages, temperature: 0.6, max_completion_tokens: request.maxTokens || 1200 };
   const extras = reasoningOptions(model);
 

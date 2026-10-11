@@ -5,6 +5,7 @@ const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 interface GeminiRequest {
   system?: string;
+  history?: { role: 'user' | 'assistant'; text: string }[];
   prompt: string;
   image?: { mimeType: string; data: string } | null;
 }
@@ -14,7 +15,12 @@ export async function generateWithGemini(request: GeminiRequest, apiKey: string)
   const ai = new GoogleGenAI({ apiKey });
   const contents = request.image
     ? [request.prompt, { inlineData: { data: request.image.data, mimeType: request.image.mimeType } }]
-    : request.prompt;
+    : request.history?.length
+      ? [
+          ...request.history.map((turn) => ({ role: turn.role === 'user' ? 'user' : 'model', parts: [{ text: turn.text }] })),
+          { role: 'user', parts: [{ text: request.prompt }] },
+        ]
+      : request.prompt;
 
   let lastError: unknown = new Error("Gemini devolveu resposta vazia.");
   for (let attempt = 1; attempt <= 2; attempt++) {

@@ -67,6 +67,25 @@ export function lastMessage(messages: unknown, max: number): string {
   return last && typeof last === 'object' ? clip((last as Record<string, unknown>).text, max) : '';
 }
 
+/**
+ * Falas anteriores da conversa (tudo menos a última mensagem), para a IA lembrar do que já foi dito.
+ * Só as mais recentes entram, cada uma cortada; avisos de erro da tela ficam de fora.
+ */
+export function chatHistory(messages: unknown, maxTurns: number, maxChars: number): { role: 'user' | 'assistant'; text: string }[] {
+  if (!Array.isArray(messages)) return [];
+  const turns: { role: 'user' | 'assistant'; text: string }[] = [];
+  for (const item of messages.slice(0, -1).slice(-maxTurns)) {
+    if (!item || typeof item !== 'object') continue;
+    const message = item as Record<string, unknown>;
+    const text = clip(message.text, maxChars);
+    if (!text || message.error === true) continue;
+    turns.push({ role: message.role === 'user' ? 'user' : 'assistant', text });
+  }
+  // A conversa enviada começa sempre por uma fala da pessoa (a saudação da tela não conta).
+  while (turns.length && turns[0].role !== 'user') turns.shift();
+  return turns;
+}
+
 const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 /** Foto enviada como data URL: só JPEG, PNG ou WebP. Devolve null se não for uma imagem aceita. */

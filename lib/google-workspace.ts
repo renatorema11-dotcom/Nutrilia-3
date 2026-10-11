@@ -583,3 +583,34 @@ export async function notifyAppointmentRequest(db: Firestore, input: { nutrition
     console.error('Ali: falha ao avisar pedido de consulta.');
   }
 }
+
+/**
+ * Paciente escolheu a nutricionista no app: ela recebe um e-mail pelo próprio Gmail, se tiver o Google conectado.
+ * O aviso sai uma vez por escolha (o prontuário guarda para quem já foi avisado). Devolve se o e-mail saiu.
+ */
+export async function notifyNewPatient(db: Firestore, patientUid: string): Promise<boolean> {
+  const ref = db.collection('patients').doc(patientUid);
+  const snap = await ref.get();
+  const patient = snap.exists ? snap.data() || {} : {};
+  const nutritionistId = typeof patient.nutritionistId === 'string' ? patient.nutritionistId : '';
+  if (!nutritionistId || patient.nutritionistNotifiedId === nutritionistId) return false;
+  try {
+    const access = await getAccess(db, nutritionistId);
+    if (!access.ok) return false;
+    const name = String(patient.name || 'Paciente').slice(0, 120);
+    await sendMail(access.token, {
+      fromName: 'NutriAli', fromEmail: access.email, to: access.email,
+      subject: `Novo paciente no NutriAli: ${name}`,
+      html: emailLayout('Você tem um novo paciente', [
+        p(`<strong>${escapeHtml(name)}</strong> escolheu você como nutricionista no NutriAli.`),
+        isValidEmail(patient.email) ? p(`<strong>E-mail:</strong> ${escapeHtml(patient.email)}`) : '',
+        p('Ele já aparece na sua lista de pacientes. Abra o prontuário para ver os dados e montar o plano alimentar.'),
+      ].join(''), 'Aviso automático do NutriAli.'),
+    });
+    await ref.set({ nutritionistNotifiedId: nutritionistId }, { merge: true });
+    return true;
+  } catch {
+    console.error('Falha ao avisar a nutricionista sobre o novo paciente.');
+    return false;
+  }
+}

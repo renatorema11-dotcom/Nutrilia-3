@@ -7,6 +7,8 @@ export interface Measurement {
   weight: number;
   bodyFat?: number;
   height?: number;
+  /** 'patient' quando o próprio paciente informou o peso (triagem ou configurações). */
+  source?: string;
 }
 
 export interface Meal {
