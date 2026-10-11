@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Lightbulb, Loader2 } from 'lucide-react';
 import Markdown from 'react-markdown';
+import { postJson } from '@/lib/api-client';
 
 export function DailyNutritionTip({ objective }: { objective: string }) {
   const [tip, setTip] = useState('');
@@ -21,12 +22,7 @@ export function DailyNutritionTip({ objective }: { objective: string }) {
       }
 
       try {
-        const res = await fetch('/api/gemini/generate-daily-tip', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective })
-        });
-        const data = await res.json();
+        const data = await postJson('/api/gemini/generate-daily-tip', { objective });
         if (data.text) {
           setTip(data.text);
           sessionStorage.setItem(`daily_tip_${today}`, data.text);

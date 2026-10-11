@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { postJson } from '@/lib/api-client';
 import { AliFoodLogs } from './ali-food-logs';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
@@ -134,21 +135,14 @@ export function FoodDiary() {
 
     setAnalyzingMeal(mealName);
     try {
-      const res = await fetch('/api/analyze-food', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          mealName,
-          plannedItems: plannedItems.join(', '),
-          actualNotes: notes,
-          image: editImage, // Send base64 image if available
-          objective: 'Manutenção e Saúde'
-        })
+      const data = await postJson('/api/analyze-food', {
+        mealName,
+        plannedItems: plannedItems.join(', '),
+        actualNotes: notes,
+        image: editImage, // Send base64 image if available
+        objective: 'Manutenção e Saúde'
       });
-      const data = await res.json();
-      
+
       // Update state using functional update to ensure we have the latest state
       let updatedEntries: Record<string, MealEntry> = {};
       setEntries(prev => {
