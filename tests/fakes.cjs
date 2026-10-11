@@ -132,7 +132,7 @@ function loadLib(files, extras) {
     const source = fs.readFileSync(path.join(__dirname, '..', 'lib', file), 'utf8');
     const code = stripTypeScriptTypes(source)
       .replace(/^import .*;\r?\n/gm, '')
-      .replace(/^export (?=(async )?function|const|let)/gm, '');
+      .replace(/^export (?=(async )?function|const|let|class)/gm, '');
     vm.runInContext(code, context, { filename: file });
   }
   return context;
