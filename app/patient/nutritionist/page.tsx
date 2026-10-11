@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { authFetch } from '@/lib/api-client';
 import {
   getRegisteredNutritionists,
   linkNutritionistToPatient,
@@ -93,27 +94,17 @@ export default function PatientNutritionistSelectionPage() {
     setSelectingId(modalNutritionist.id);
 
     try {
-      await linkNutritionistToPatient(user.uid, modalNutritionist);
-      
       const pName = user.displayName || patientData?.name || 'Paciente';
       const pEmail = user.email || patientData?.email || 'email@paciente.com';
 
-      // Send email notification to nutritionist
+      // O nome e o e-mail entram no prontuário se ele ainda não existir (conta criada pelo Google).
+      await linkNutritionistToPatient(user.uid, modalNutritionist, { name: pName, email: user.email || patientData?.email || '' });
+
+      // O aviso por e-mail à nutricionista ainda não é enviado; a rota só registra o pedido do paciente logado.
       try {
-        await fetch('/api/notify-nutritionist', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nutritionistId: modalNutritionist.id,
-            nutritionistEmail: modalNutritionist.email,
-            nutritionistName: modalNutritionist.displayName,
-            patientId: user.uid,
-            patientName: pName,
-            patientEmail: pEmail
-          })
-        });
+        await authFetch('/api/notify-nutritionist', { method: 'POST' });
       } catch (notifyErr) {
-        console.warn('Erro ao notificar nutricionista por e-mail:', notifyErr);
+        console.warn('Erro ao avisar a nutricionista:', notifyErr);
       }
 
       // Update local state
@@ -137,12 +128,13 @@ export default function PatientNutritionistSelectionPage() {
         nutritionistSpecialty: modalNutritionist.specialty
       }));
 
-      setSuccessMsg(`Você contratou ${modalNutritionist.displayName}! Enviaremos um e-mail para ${modalNutritionist.email} com a notificação do seu cadastro.`);
+      setSuccessMsg(`Você contratou ${modalNutritionist.displayName}! Seu nome já aparece na lista de pacientes desse profissional.`);
       setIsChanging(false);
       setModalNutritionist(null);
       setTimeout(() => setSuccessMsg(''), 7000);
     } catch (err) {
       console.error('Erro ao vincular nutricionista:', err);
+      alert('Não foi possível concluir a escolha agora. Tente de novo em instantes.');
     } finally {
       setSelectingId(null);
     }
