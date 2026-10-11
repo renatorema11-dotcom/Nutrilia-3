@@ -10,6 +10,8 @@ import { ApiError, postJson } from '@/lib/api-client';
 interface Message {
   role: 'user' | 'ai';
   text: string;
+  /** Aviso de falha mostrado na conversa; não entra no histórico enviado à IA. */
+  error?: boolean;
 }
 
 export default function NutritionistAssistant() {
@@ -70,7 +72,8 @@ export default function NutritionistAssistant() {
       }
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'ai', text: error instanceof ApiError ? error.message : 'Erro ao processar solicitação.' }]);
+      // error: true deixa o aviso fora do histórico enviado à IA nas próximas perguntas.
+      setMessages(prev => [...prev, { role: 'ai', text: error instanceof ApiError ? error.message : 'Erro ao processar solicitação.', error: true }]);
     } finally {
       setIsLoading(false);
     }
