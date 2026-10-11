@@ -11,6 +11,8 @@ import { ElevenLabsAgent } from '@/components/elevenlabs-agent';
 interface Message {
   role: 'user' | 'ai';
   text: string;
+  /** Aviso de falha mostrado na conversa; não entra no histórico enviado à IA. */
+  error?: boolean;
 }
 
 export default function PatientChat() {
@@ -25,29 +27,27 @@ export default function PatientChat() {
 
   useEffect(() => {
     async function loadContext() {
-      let weight = 70;
-      let objective = 'Alimentação Saudável';
-
-      if (user) {
-        const data = await getUserData(user.uid);
-        if (data?.patientData) {
-          weight = data.patientData.weight || 70;
-          objective = data.patientData.objective || objective;
-        }
-      } else {
-        const saved = localStorage.getItem('mockPatientData');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            weight = parsed.weight || 70;
-            objective = parsed.objective || objective;
-          } catch {
-            // ignore
+      if (!user) return;
+      // Só entra no contexto o que está de fato no prontuário: nada de valores de exemplo.
+      const data = await getUserData(user.uid);
+      const patient = data?.patientData || {};
+      const lines: string[] = [];
+      if (patient.objective) lines.push(`Objetivo: ${patient.objective}.`);
+      if (patient.weight) lines.push(`Peso atual: ${patient.weight} kg.`);
+      if (patient.targetWeight) lines.push(`Meta de peso: ${patient.targetWeight} kg.`);
+      const days = Array.isArray(data?.currentPlan?.days) ? data.currentPlan.days : [];
+      if (days.length) {
+        lines.push('Plano alimentar atual, aprovado pela nutricionista:');
+        for (const day of days) {
+          lines.push(`${day.name}:`);
+          for (const meal of day.meals || []) {
+            lines.push(`- ${meal.time} ${meal.name}: ${Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}`);
           }
         }
+      } else {
+        lines.push('O paciente ainda não tem plano alimentar aprovado pela nutricionista.');
       }
-
-      setPatientContext(`Peso do paciente: ${weight}kg. Objetivo: ${objective}.`);
+      setPatientContext(lines.join('\n').slice(0, 5000));
     }
     loadContext();
   }, [user]);
@@ -80,7 +80,8 @@ export default function PatientChat() {
       }
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'ai', text: error instanceof ApiError ? error.message : 'Desculpe, ocorreu um erro ao tentar responder. Tente novamente.' }]);
+      // error: true deixa o aviso fora do histórico enviado à IA nas próximas perguntas.
+      setMessages(prev => [...prev, { role: 'ai', text: error instanceof ApiError ? error.message : 'Desculpe, ocorreu um erro ao tentar responder. Tente novamente.', error: true }]);
     } finally {
       setIsLoading(false);
     }
