@@ -7,10 +7,32 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
-import { postJson } from '@/lib/api-client';
+import { ApiError, postJson } from '@/lib/api-client';
 import { AliFoodLogs } from './ali-food-logs';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
+
+/** Reduz a foto antes de guardar e enviar: fica leve para o banco e para a análise da IA. */
+function shrinkPhoto(file: File, maxSide = 1024, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new window.Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Foto inválida'));
+    };
+    img.src = url;
+  });
+}
 
 interface MealEntry {
   status: MealStatus;
@@ -24,6 +46,8 @@ export function FoodDiary() {
   const [entries, setEntries] = useState<Record<string, MealEntry>>({});
   const [editingMeal, setEditingMeal] = useState<string | null>(null);
   const [analyzingMeal, setAnalyzingMeal] = useState<string | null>(null);
+  // Aviso mostrado quando a IA não conseguiu analisar a refeição (nada de texto pronto no lugar).
+  const [analysisNote, setAnalysisNote] = useState<{ meal: string; text: string } | null>(null);
   const [notes, setNotes] = useState('');
   const [editImage, setEditImage] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
@@ -114,11 +138,14 @@ export function FoodDiary() {
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      shrinkPhoto(file).then(setEditImage).catch(() => {
+        // Se o aparelho não conseguir reduzir, segue com a foto original.
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setEditImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
     }
   };
 
@@ -134,6 +161,7 @@ export function FoodDiary() {
     setEditingMeal(null);
 
     setAnalyzingMeal(mealName);
+    setAnalysisNote(null);
     try {
       const data = await postJson('/api/analyze-food', {
         mealName,
@@ -170,6 +198,8 @@ export function FoodDiary() {
       }
     } catch (e) {
       console.error(e);
+      // O registro da refeição já foi salvo; só a análise ficou sem resposta.
+      setAnalysisNote({ meal: mealName, text: e instanceof ApiError ? e.message : 'Não foi possível analisar esta refeição agora.' });
     } finally {
       setAnalyzingMeal(null);
     }
@@ -364,6 +394,11 @@ export function FoodDiary() {
                            entry.aiStatus === 'corrective' ? <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" /> :
                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
                           <p>{entry.aiFeedback}</p>
+                        </div>
+                      ) : analysisNote?.meal === meal.name ? (
+                        <div role="status" className="p-2 rounded-md text-xs flex items-start gap-2 border bg-slate-50 text-slate-600 border-slate-200">
+                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <p>Registro salvo, mas sem análise: {analysisNote.text}</p>
                         </div>
                       ) : null}
                     </div>
