@@ -179,7 +179,9 @@ export default function PatientProfile() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{patient.name}</h1>
-            <p className="text-gray-600">{patient.email} • {patient.age} anos • Objetivo: {patient.objective}</p>
+            <p className="text-gray-600">
+              {[patient.email, patient.age ? `${patient.age} anos` : 'triagem pendente', patient.objective ? `Objetivo: ${patient.objective}` : ''].filter(Boolean).join(' • ')}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             {planStatus === 'approved' && <Badge variant="success">Plano Ativo</Badge>}
@@ -262,7 +264,7 @@ export default function PatientProfile() {
                     <div key={idx} className="pt-2 first:pt-0 flex justify-between text-sm">
                       <div>
                         <p className="font-semibold text-slate-800">{m.weight} kg</p>
-                        <p className="text-xs text-slate-400">{m.date}</p>
+                        <p className="text-xs text-slate-400">{m.date}{m.source === 'patient' ? ' • informado pelo paciente' : ''}</p>
                       </div>
                       <div className="text-right">
                         {m.bodyFat && <p className="text-xs text-slate-600">{m.bodyFat}% gordura</p>}
@@ -303,7 +305,7 @@ export default function PatientProfile() {
                     {generating ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Elaborando rascunho com Gemini...
+                        Elaborando rascunho com a IA...
                       </>
                     ) : (
                       'Gerar Rascunho com IA'
