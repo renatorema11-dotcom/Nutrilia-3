@@ -118,9 +118,8 @@ export default function PatientDashboard() {
     if (!patientData) return;
     setIsGenerating(true);
     try {
-      // Só o que a IA precisa: o prontuário inteiro (fotos, medições) não sai do aparelho.
+      // Só o que a IA precisa: o nome e o prontuário inteiro (fotos, medições) não saem do aparelho.
       const data = await postJson('/api/gemini/generate-creative-plan', {
-        name: patientData.name,
         age: patientData.age,
         weight: patientData.weight,
         height: patientData.height,
