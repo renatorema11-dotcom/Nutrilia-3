@@ -30,6 +30,7 @@ function NutritionistChatContent() {
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const [chatError, setChatError] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -66,9 +67,10 @@ function NutritionistChatContent() {
     if (!selectedPatient?.id || !user?.uid) return;
 
     const chatId = `${selectedPatient.id}_${user.uid}`;
+    setChatError('');
     const unsubscribe = subscribeToDirectMessages(chatId, (msgs) => {
       setMessages(msgs);
-    });
+    }, () => setChatError('Não foi possível carregar esta conversa. Recarregue a página e tente de novo.'));
 
     return () => {
       unsubscribe();
@@ -94,10 +96,14 @@ function NutritionistChatContent() {
     const chatId = `${selectedPatient.id}_${user.uid}`;
     const senderName = user.displayName || 'Nutricionista';
 
+    setChatError('');
     try {
       await sendDirectMessage(chatId, user.uid, senderName, 'nutritionist', text);
     } catch (err) {
       console.error('Erro ao enviar mensagem:', err);
+      // Devolve o texto ao campo: a mensagem não saiu e a nutricionista precisa saber.
+      setInputText(text);
+      setChatError('A mensagem não foi enviada. Tente de novo.');
     } finally {
       setSending(false);
     }
@@ -306,6 +312,7 @@ function NutritionistChatContent() {
 
               {/* Message Input */}
               <div className="p-3.5 bg-white border-t border-slate-100">
+                {chatError && <p role="alert" className="mb-2 text-sm text-red-700">{chatError}</p>}
                 <form onSubmit={handleSend} className="flex gap-2">
                   <Input
                     value={inputText}
