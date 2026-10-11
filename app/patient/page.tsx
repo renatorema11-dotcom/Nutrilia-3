@@ -56,18 +56,12 @@ export default function PatientDashboard() {
         if (data?.savedPlans && isValidPlanFormat(data.savedPlans) && data.savedPlans.length > 0) {
           setHasPlan(true);
         }
-        if (data?.patientData) {
-          setPatientData(data.patientData);
+        const patient = data?.patientData;
+        if (patient?.age && patient?.weight && patient?.height) {
+          setPatientData({ ...patient, name: patient.name || user.displayName || 'Paciente', objective: patient.objective || 'Saúde e Bem-estar' });
         } else {
-          setPatientData({
-            name: user.displayName || 'Paciente',
-            age: 30,
-            weight: 70,
-            height: 168,
-            initialWeight: 70,
-            targetWeight: 65,
-            objective: 'Saúde e Bem-Estar'
-          });
+          // Sem idade, peso e altura no prontuário, o painel não inventa valores: a pessoa conclui a triagem.
+          router.replace('/onboarding');
         }
       } else {
         const savedPlans = localStorage.getItem('mockSavedPlans');
@@ -112,7 +106,7 @@ export default function PatientDashboard() {
       }
     }
     loadData();
-  }, [user]);
+  }, [user, router]);
 
   const generateCreativePlan = async () => {
     if (!patientData) return;
@@ -174,10 +168,10 @@ export default function PatientDashboard() {
       {/* Top Row: Key Metrics & Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <div className="lg:col-span-1 h-full">
-          <WeightProgress 
-            initialWeight={patientData.initialWeight || patientData.weight + 5} 
-            currentWeight={patientData.weight} 
-            targetWeight={patientData.targetWeight || patientData.weight - 5} 
+          <WeightProgress
+            initialWeight={patientData.initialWeight || patientData.weight}
+            currentWeight={patientData.weight}
+            targetWeight={patientData.targetWeight}
           />
         </div>
         <div className="lg:col-span-2 h-full">
