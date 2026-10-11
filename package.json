@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "clean": "next clean",
-    "test:ali": "node tests/ali-auth.cjs && node tests/agenda.cjs && node tests/appointments.cjs && node tests/nutri-auth.cjs && node tests/nutri-assistant.cjs && node tests/weekly-report.cjs",
+    "test:ali": "node tests/ali-auth.cjs && node tests/agenda.cjs && node tests/appointments.cjs && node tests/nutri-auth.cjs && node tests/nutri-assistant.cjs && node tests/weekly-report.cjs && node tests/ai-guard.cjs",
     "typecheck": "tsc --noEmit",
     "test:n8n": "node tests/n8n-contract.cjs"
   },
@@ -25,7 +25,7 @@
     "firebase-admin": "^13.10.0",
     "lucide-react": "^1.25.0",
     "motion": "^12.23.24",
-    "next": "^15.4.9",
+    "next": "^15.5.27",
     "postcss": "^8.5.6",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
