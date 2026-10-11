@@ -21,6 +21,7 @@ import { FoodDiary } from '@/components/food-diary';
 import { Achievements } from '@/components/achievements';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { ApiError, postJson } from '@/lib/api-client';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
@@ -117,17 +118,21 @@ export default function PatientDashboard() {
     if (!patientData) return;
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/gemini/generate-creative-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...patientData, observations })
+      // Só o que a IA precisa: o prontuário inteiro (fotos, medições) não sai do aparelho.
+      const data = await postJson('/api/gemini/generate-creative-plan', {
+        name: patientData.name,
+        age: patientData.age,
+        weight: patientData.weight,
+        height: patientData.height,
+        objective: patientData.objective,
+        observations,
       });
-      const data = await res.json();
       if (data.text) {
         setCreativePlan(data.text);
       }
     } catch (error) {
       console.error(error);
+      if (error instanceof ApiError) alert(error.message);
     } finally {
       setIsGenerating(false);
     }
