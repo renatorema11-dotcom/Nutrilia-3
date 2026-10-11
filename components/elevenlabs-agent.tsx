@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { auth, onAuthStateChanged } from '@/lib/firebase';
+import { aliSessionAuth } from '@/lib/api-client';
 import { useConversation, ConversationProvider } from '@elevenlabs/react';
 import { Button } from '@/components/ui';
 import { Mic, MicOff, Loader2, Bot } from 'lucide-react';
@@ -70,10 +71,13 @@ function AgentInner({
         const token = await current.getIdToken(true);
         if (auth.currentUser?.uid !== current.uid) throw new Error('Sua sessão mudou. Entre novamente.');
         const aliContext = await loadAliContext(token);
+        // O servidor emite a credencial da conversa para quem está logado; sem ela, vale o identificador do agente.
+        const sessionAuth = await aliSessionAuth(token, 'voice');
         sessionUid.current = current.uid;
-        await startSession({ agentId, dynamicVariables: {
-          ...aliContext, ...dynamicVariables, patientUid: current.uid, secret__patientToken: token,
-        } });
+        const variables = { ...aliContext, ...dynamicVariables, patientUid: current.uid, secret__patientToken: token };
+        await startSession(sessionAuth && 'conversationToken' in sessionAuth
+          ? { conversationToken: sessionAuth.conversationToken, dynamicVariables: variables }
+          : { agentId, dynamicVariables: variables });
         if (auth.currentUser?.uid !== current.uid) {
           await endSession();
           throw new Error('Sessão alterada durante a conexão.');

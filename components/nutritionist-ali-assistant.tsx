@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ConversationProvider, useConversation } from '@elevenlabs/react';
 import { Bot, Loader2, Mic, PhoneOff, Send, X } from 'lucide-react';
 import { auth, onAuthStateChanged } from '@/lib/firebase';
+import { aliSessionAuth } from '@/lib/api-client';
 import { describeDates } from '@/lib/agenda';
 
 // Agente da ElevenLabs só para nutricionistas (o dos pacientes é outro). O ID é público.
@@ -107,15 +108,20 @@ function AssistantPanel({ onClose }: { onClose: () => void }) {
       if (!current || current.isAnonymous) throw new Error('sem login');
       const token = await current.getIdToken(true);
       const context = await loadContext(token);
+      // O servidor emite a credencial da conversa para quem está logado; sem ela, vale o identificador do agente.
+      const sessionAuth = await aliSessionAuth(token, withVoice ? 'voice' : 'text');
       if (auth.currentUser?.uid !== current.uid) throw new Error('sessão mudou');
       sessionUid.current = current.uid;
       voiceSession.current = withVoice;
       setVoice(withVoice);
-      startSession({
-        agentId: NUTRITIONIST_AGENT_ID,
-        textOnly: !withVoice,
-        dynamicVariables: { ...context, secret__nutritionistToken: token },
-      });
+      const dynamicVariables = { ...context, secret__nutritionistToken: token };
+      if (sessionAuth && 'conversationToken' in sessionAuth) {
+        startSession({ conversationToken: sessionAuth.conversationToken, dynamicVariables });
+      } else if (sessionAuth && 'signedUrl' in sessionAuth) {
+        startSession({ signedUrl: sessionAuth.signedUrl, textOnly: true, dynamicVariables });
+      } else {
+        startSession({ agentId: NUTRITIONIST_AGENT_ID, textOnly: !withVoice, dynamicVariables });
+      }
       // O login vale por uma hora: encerra antes disso para renovar na próxima conversa.
       if (expiryTimer.current) clearTimeout(expiryTimer.current);
       expiryTimer.current = setTimeout(() => {
