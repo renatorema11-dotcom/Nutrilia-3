@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { aiErrorResponse, generateAi } from "@/lib/ai";
-import { clip, guardAi, lastMessage } from "@/lib/ai-guard";
+import { chatHistory, clip, guardAi, lastMessage } from "@/lib/ai-guard";
 
 export const runtime = 'nodejs';
 
@@ -24,7 +24,10 @@ ${context}`;
 
     const message = lastMessage(guard.body.messages, 4000) || "Resuma a situação da clínica.";
 
-    const text = await generateAi({ system: systemInstruction, prompt: message, maxTokens: 1200 });
+    // As últimas falas vão junto, para a IA lembrar do que já foi conversado.
+    const history = chatHistory(guard.body.messages, 8, 600);
+
+    const text = await generateAi({ system: systemInstruction, history, prompt: message, maxTokens: 1200 });
 
     return NextResponse.json({ text });
   } catch (error) {
