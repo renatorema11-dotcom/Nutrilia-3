@@ -87,6 +87,28 @@ async function check(name, fn) { await fn(); count++; }
     assert.equal(run("lastMessage([{ text: { nested: true } }], 100)"), '');
   });
 
+  await check('memória da conversa: falas anteriores recentes, cortadas, sem avisos de erro e começando pela pessoa', async () => {
+    const history = (messages, turns = 8, chars = 600) => { context.messages = messages; return JSON.parse(JSON.stringify(run(`chatHistory(messages, ${turns}, ${chars})`))); };
+    const talk = [
+      { role: 'ai', text: 'Olá! Como posso ajudar?' },
+      { role: 'user', text: 'Posso trocar o arroz por batata?' },
+      { role: 'ai', text: 'Pode, na mesma quantidade.' },
+      { role: 'ai', text: 'A IA está indisponível.', error: true },
+      { role: 'user', text: 'E no jantar?' },
+    ];
+    // A saudação da tela e o aviso de erro ficam de fora; a última mensagem é a pergunta atual, não histórico.
+    assert.deepEqual(history(talk), [{ role: 'user', text: 'Posso trocar o arroz por batata?' }, { role: 'assistant', text: 'Pode, na mesma quantidade.' }]);
+    assert.deepEqual(history(talk, 8, 5), [{ role: 'user', text: 'Posso' }, { role: 'assistant', text: 'Pode,' }]);
+    const long = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? 'ai' : 'user', text: `fala ${i}` }));
+    const recent = history(long, 6);
+    assert.equal(recent.length <= 6, true);
+    assert.equal(recent[0].role, 'user');
+    assert.equal(recent.at(-1).text, 'fala 28');
+    assert.deepEqual(history([{ role: 'user', text: 'só a pergunta' }]), []);
+    assert.deepEqual(history('texto'), []);
+    assert.deepEqual(history([null, { text: { x: 1 } }, { role: 'user', text: 'oi' }, { role: 'user', text: 'atual' }]), [{ role: 'user', text: 'oi' }]);
+  });
+
   await check('foto: só JPEG, PNG ou WebP em base64', async () => {
     const parse = (value) => { context.image = value; const r = run('parseImage(image)'); return r && r.mimeType; };
     assert.equal(parse('data:image/jpeg;base64,/9j/4AAQ'), 'image/jpeg');

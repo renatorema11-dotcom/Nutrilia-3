@@ -65,6 +65,21 @@ async function check(name, fn) { await fn(); count++; }
     assert.equal(call.body.include_reasoning, false);
   });
 
+  await check('as falas anteriores vão entre as regras e a pergunta atual, para a IA lembrar da conversa', async () => {
+    reset({ GROQ_API_KEY: 'k' }, [answer('No jantar também pode.')]);
+    await ask({
+      system: 'Regras.',
+      history: [{ role: 'user', text: 'Posso trocar o arroz por batata?' }, { role: 'assistant', text: 'Pode.' }],
+      prompt: 'E no jantar?',
+    });
+    assert.equal(JSON.stringify(calls[0].body.messages), JSON.stringify([
+      { role: 'system', content: 'Regras.' },
+      { role: 'user', content: 'Posso trocar o arroz por batata?' },
+      { role: 'assistant', content: 'Pode.' },
+      { role: 'user', content: 'E no jantar?' },
+    ]));
+  });
+
   await check('o raciocínio do modelo não chega à pessoa', async () => {
     reset({ GROQ_API_KEY: 'k' }, [answer('<think>vou pensar um pouco</think>\n\nBeba água.')]);
     assert.equal(await ask({ prompt: 'dica' }), 'Beba água.');
