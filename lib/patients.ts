@@ -1,5 +1,6 @@
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db, createPatientAuthUser, auth } from './firebase';
+import { authFetch } from './api-client';
 
 export interface Measurement {
   date: string;
@@ -66,30 +67,22 @@ export interface RegisteredNutritionist {
 
 export async function getRegisteredNutritionists(): Promise<RegisteredNutritionist[]> {
   try {
-    const q = query(collection(db, 'users'), where('role', '==', 'nutritionist'));
-    const snap = await getDocs(q);
-    const list: RegisteredNutritionist[] = [];
-    snap.forEach((docSnap) => {
-      const data = docSnap.data();
-      list.push({
-        id: docSnap.id,
-        displayName: data.displayName || data.name || 'Nutricionista',
-        email: data.email || '',
-        crn: data.crn || '',
-        specialty: data.specialty || 'Nutrição Clínica',
-        photoURL: data.photoURL || '',
-        phone: data.phone || '',
-        bio: data.bio || '',
-      });
-    });
-    return list;
+    // A lista vem do servidor, só com o perfil profissional: o navegador não lê o cadastro de outras pessoas.
+    const res = await authFetch('/api/nutritionists', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.nutritionists) ? data.nutritionists as RegisteredNutritionist[] : [];
   } catch (err) {
     console.error('Erro ao buscar nutricionistas:', err);
     return [];
   }
 }
 
-export async function linkNutritionistToPatient(patientUid: string, nutritionist: RegisteredNutritionist): Promise<void> {
+export async function linkNutritionistToPatient(
+  patientUid: string,
+  nutritionist: RegisteredNutritionist,
+  profile: { name?: string; email?: string } = {},
+): Promise<void> {
   const updates = {
     nutritionistId: nutritionist.id,
     nutritionistName: nutritionist.displayName,
@@ -98,7 +91,18 @@ export async function linkNutritionistToPatient(patientUid: string, nutritionist
     nutritionistPhoto: nutritionist.photoURL || '',
     nutritionistSpecialty: nutritionist.specialty || '',
   };
-  await setDoc(doc(db, 'patients', patientUid), removeUndefined(updates), { merge: true });
+  const patientRef = doc(db, 'patients', patientUid);
+  // Quem entrou pelo Google ainda não tem prontuário: ele nasce aqui, já com nome e e-mail,
+  // para a nutricionista escolhida enxergar o paciente na lista dela.
+  const existing = await getDoc(patientRef);
+  const base = existing.exists() ? {} : {
+    id: patientUid,
+    name: profile.name || 'Paciente',
+    email: profile.email || '',
+    createdAt: new Date().toISOString(),
+    measurements: [],
+  };
+  await setDoc(patientRef, removeUndefined({ ...base, ...updates }), { merge: true });
   await setDoc(doc(db, 'users', patientUid), removeUndefined({
     nutritionistId: nutritionist.id,
     nutritionistName: nutritionist.displayName,
