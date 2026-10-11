@@ -6,6 +6,7 @@ import { ArrowLeft, Clock, Wand2, CheckCircle2, Plus, Loader2, Trash2, MessageSq
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { getPatientById, updatePatient, deletePatient, Patient, Plan } from '@/lib/patients';
+import { ApiError, postJson } from '@/lib/api-client';
 import { AliFoodLogs } from '@/components/ali-food-logs';
 
 export default function PatientProfile() {
@@ -79,21 +80,16 @@ export default function PatientProfile() {
         height: patient.height
       };
 
-      const res = await fetch('/api/gemini/generate-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientContext: JSON.stringify({
-            nome: patient.name,
-            idade: patient.age,
-            objetivo: patient.objective,
-            pesoAtual: lastMeasure.weight,
-            altura: lastMeasure.height || patient.height,
-          }),
-          instructions
-        })
+      const json = await postJson('/api/gemini/generate-plan', {
+        patientContext: JSON.stringify({
+          nome: patient.name,
+          idade: patient.age,
+          objetivo: patient.objective,
+          pesoAtual: lastMeasure.weight,
+          altura: lastMeasure.height || patient.height,
+        }),
+        instructions
       });
-      const json = await res.json();
       if (json.data) {
         const generatedDraft: Plan = {
           id: 'plan_' + Date.now(),
@@ -109,7 +105,7 @@ export default function PatientProfile() {
       }
     } catch (e) {
       console.error(e);
-      alert('Erro ao gerar plano.');
+      alert(e instanceof ApiError ? e.message : 'Erro ao gerar plano.');
     } finally {
       setGenerating(false);
     }
