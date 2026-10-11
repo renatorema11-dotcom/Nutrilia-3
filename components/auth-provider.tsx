@@ -24,6 +24,23 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Apaga do navegador o que o app guardou da pessoa (rascunhos, diário, dica do dia).
+ * Dado de saúde não fica no aparelho depois que ela sai. O idioma escolhido continua.
+ */
+function clearLocalAppData() {
+  try {
+    for (const storage of [localStorage, sessionStorage]) {
+      for (let i = storage.length - 1; i >= 0; i--) {
+        const key = storage.key(i);
+        if (key && /^(mock|completedMeals|daily_tip_|nutri_)/.test(key)) storage.removeItem(key);
+      }
+    }
+  } catch {
+    // navegador sem armazenamento (modo privado)
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<UserRole>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -57,10 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('Error fetching user document:', err);
         }
       } else {
-        // Sem sessão no Firebase, o papel salvo no navegador não vale mais.
+        // Sem sessão no Firebase, o papel salvo no navegador não vale mais, nem os dados guardados no aparelho.
         setRole(null);
         setMustChangePassword(false);
-        localStorage.removeItem('mockRole');
+        clearLocalAppData();
       }
       setReady(true);
     });
@@ -176,21 +193,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await setDoc(userRef, removeUndefined(userData));
 
       if (role === 'patient') {
+        // O prontuário nasce só com nome e e-mail. Idade, peso, altura e objetivo o paciente informa
+        // na triagem logo em seguida (o servidor grava): nada de valores inventados.
         const patientRef = doc(db, 'patients', result.user.uid);
         const patientData = {
           id: result.user.uid,
           name,
           email,
-          age: 30,
-          weight: 70,
-          height: 168,
-          objective: 'Saúde Geral',
           createdAt: now,
-          measurements: [{
-            date: now.split('T')[0],
-            weight: 70,
-            height: 168
-          }],
+          measurements: [],
           currentPlan: null,
           pastPlans: []
         };
@@ -269,10 +280,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOut(auth).catch((err) => console.error('Sign out error:', err));
     setUser(null);
     setRole(null);
-    localStorage.removeItem('mockRole');
-    localStorage.removeItem('mockPatientData');
-    localStorage.removeItem('mockSavedPlans');
-    localStorage.removeItem('mockFoodDiary');
+    setMustChangePassword(false);
+    clearLocalAppData();
     router.push('/login');
   };
 
