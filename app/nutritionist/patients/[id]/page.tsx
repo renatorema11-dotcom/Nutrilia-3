@@ -81,8 +81,8 @@ export default function PatientProfile() {
       };
 
       const json = await postJson('/api/gemini/generate-plan', {
+        // O nome do paciente não vai para a IA: ela não precisa dele para montar o rascunho.
         patientContext: JSON.stringify({
-          nome: patient.name,
           idade: patient.age,
           objetivo: patient.objective,
           pesoAtual: lastMeasure.weight,
