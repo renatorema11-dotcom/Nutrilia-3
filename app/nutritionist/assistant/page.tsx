@@ -5,6 +5,7 @@ import { Card, CardContent, Input, Button } from '@/components/ui';
 import { Send, Sparkles, UserRound } from 'lucide-react';
 import { getPatients, Patient } from '@/lib/patients';
 import { useAuth } from '@/components/auth-provider';
+import { ApiError, postJson } from '@/lib/api-client';
 
 interface Message {
   role: 'user' | 'ai';
@@ -59,23 +60,17 @@ export default function NutritionistAssistant() {
         proximaConsulta: p.nextAppointment
       })));
 
-      const res = await fetch('/api/gemini/chat/nutritionist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [...messages, { role: 'user', text: userMessage }],
-          context
-        })
+      const data = await postJson('/api/gemini/chat/nutritionist', {
+        messages: [...messages, { role: 'user', text: userMessage }],
+        context
       });
-
-      const data = await res.json();
 
       if (data.text) {
         setMessages(prev => [...prev, { role: 'ai', text: data.text }]);
       }
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'ai', text: 'Erro ao processar solicitação.' }]);
+      setMessages(prev => [...prev, { role: 'ai', text: error instanceof ApiError ? error.message : 'Erro ao processar solicitação.' }]);
     } finally {
       setIsLoading(false);
     }
