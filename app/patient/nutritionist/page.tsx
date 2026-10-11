@@ -100,26 +100,23 @@ export default function PatientNutritionistSelectionPage() {
       // O nome e o e-mail entram no prontuário se ele ainda não existir (conta criada pelo Google).
       await linkNutritionistToPatient(user.uid, modalNutritionist, { name: pName, email: user.email || patientData?.email || '' });
 
-      // O aviso por e-mail à nutricionista ainda não é enviado; a rota só registra o pedido do paciente logado.
+      // A nutricionista é avisada por e-mail se tiver o Google conectado; se o aviso falhar, a escolha continua valendo.
       try {
         await authFetch('/api/notify-nutritionist', { method: 'POST' });
       } catch (notifyErr) {
         console.warn('Erro ao avisar a nutricionista:', notifyErr);
       }
 
-      // Update local state
+      // Update local state (sem inventar idade, peso ou altura para quem ainda não informou)
       setPatientData((prev) => ({
         ...(prev || {
           id: user.uid,
           name: pName,
           email: pEmail,
-          age: 30,
-          weight: 70,
-          height: 170,
-          objective: 'Saúde Geral',
+          objective: '',
           createdAt: new Date().toISOString(),
           measurements: []
-        }),
+        } as unknown as Patient),
         nutritionistId: modalNutritionist.id,
         nutritionistName: modalNutritionist.displayName,
         nutritionistEmail: modalNutritionist.email,
