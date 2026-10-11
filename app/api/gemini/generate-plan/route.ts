@@ -1,8 +1,11 @@
 import { Type } from "@google/genai";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { generateGeminiContent } from "@/lib/gemini";
+import { clip, guardAi } from "@/lib/ai-guard";
 
-export async function POST(req: NextRequest) {
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
   const fallbackJson = {
     days: [
       {
@@ -33,8 +36,13 @@ export async function POST(req: NextRequest) {
     ]
   };
 
+  // Só a nutricionista logada gera rascunhos, com limite de pedidos e de tamanho.
+  const guard = await guardAi(req, { roles: ['nutritionist'], scope: 'generate-plan', limit: 15, maxChars: 40_000 });
+  if (!guard.ok) return guard.response;
+
   try {
-    const { patientContext, instructions } = await req.json();
+    const patientContext = clip(guard.body.patientContext, 8000);
+    const instructions = clip(guard.body.instructions, 4000);
 
     const result = await generateGeminiContent({
       model: "gemini-2.5-flash",
