@@ -10,6 +10,8 @@ As variáveis AGENT_API_SECRET, FIREBASE_SERVICE_ACCOUNT_KEY e GROQ_API_KEY são
 
 A IA dos chats, dos planos, da dica do dia e da análise de refeição usa a Groq (GROQ_API_KEY). GROQ_MODEL e GROQ_VISION_MODEL são opcionais e trocam o modelo sem novo build. Sem GROQ_API_KEY, o app usa o Gemini se houver GEMINI_API_KEY; sem nenhuma das duas, essas funções respondem 503 com um aviso claro para a tela.
 
+ELEVENLABS_API_KEY (runtime) permite ao servidor emitir a credencial de cada conversa da Ali (POST /api/ali/session) para quem está logado. Ordem para ligar a autenticação dos agentes: primeiro o app no ar com a chave e as conversas funcionando, só depois "Ativar autenticação" nos dois agentes na ElevenLabs (tirando a lista de permitidos, que não se combina com autenticação). Sem a chave, a rota responde 503 e as telas usam só o ID do agente.
+
 Depois de subir, conferir status saudável, HTTPS válido, página de login, hostname autorizado no Firebase Authentication, login real e rejeição de chamadas da Ali sem autenticação. Seguir n8n/README.md para parear as credenciais e testar com paciente fictício antes de ativar as ações.
 
 O build Next.js e os testes passaram localmente; a imagem Docker precisa ser construída e verificada na VPS, pois Docker não está instalado no ambiente local.
