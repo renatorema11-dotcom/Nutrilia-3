@@ -111,7 +111,8 @@ export default function PatientsList() {
                   >
                     <p className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors truncate">{patient.name}</p>
                     <p className="text-sm text-gray-500 truncate">
-                      {patient.email} • {patient.age} anos • {patient.objective}
+                      {/* Quem se cadastrou sozinho e ainda não fez a triagem não tem idade nem objetivo. */}
+                      {[patient.email, patient.age ? `${patient.age} anos` : 'triagem pendente', patient.objective].filter(Boolean).join(' • ')}
                     </p>
                     {/* No celular o status do plano fica abaixo do nome, para o nome não ser cortado. */}
                     <div className="sm:hidden mt-1.5">
