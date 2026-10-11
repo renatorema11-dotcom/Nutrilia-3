@@ -6,7 +6,9 @@ Usar um projeto separado chamado nutriali na VPS existente, sem alterar os proje
 
 As labels devem rotear o hostname escolhido à porta 3000 do NutriAli. Fixar o build em um commit do GitHub para permitir rastrear e repetir a implantação. Conferir DNS antes de publicar.
 
-As variáveis AGENT_API_SECRET, FIREBASE_SERVICE_ACCOUNT_KEY e GEMINI_API_KEY são fornecidas somente no runtime pela configuração de ambiente da hospedagem. Sem credenciais Admin e segredo, a API da Ali permanece bloqueada com 503. A primeira publicação da interface não significa que a integração está pronta.
+As variáveis AGENT_API_SECRET, FIREBASE_SERVICE_ACCOUNT_KEY e GROQ_API_KEY são fornecidas somente no runtime pela configuração de ambiente da hospedagem. Sem credenciais Admin e segredo, a API da Ali permanece bloqueada com 503. A primeira publicação da interface não significa que a integração está pronta.
+
+A IA dos chats, dos planos, da dica do dia e da análise de refeição usa a Groq (GROQ_API_KEY). GROQ_MODEL e GROQ_VISION_MODEL são opcionais e trocam o modelo sem novo build. Sem GROQ_API_KEY, o app usa o Gemini se houver GEMINI_API_KEY; sem nenhuma das duas, essas funções respondem 503 com um aviso claro para a tela.
 
 Depois de subir, conferir status saudável, HTTPS válido, página de login, hostname autorizado no Firebase Authentication, login real e rejeição de chamadas da Ali sem autenticação. Seguir n8n/README.md para parear as credenciais e testar com paciente fictício antes de ativar as ações.
 
