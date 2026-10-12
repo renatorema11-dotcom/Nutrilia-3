@@ -12,7 +12,7 @@ const navigation: NavItem[] = [
   { name: 'Meu Plano', shortName: 'Plano', href: '/patient/plan', icon: FileText, inBottomBar: true },
   { name: 'Meus Dados', shortName: 'Dados', href: '/patient/data', icon: Activity, inBottomBar: true },
   { name: 'Meu Nutricionista', shortName: 'Nutri', href: '/patient/nutritionist', icon: Stethoscope, inBottomBar: true },
-  { name: 'Chat Nutri IA', shortName: 'Chat', href: '/patient/chat', icon: MessageSquare, inBottomBar: true },
+  { name: 'Chat', shortName: 'Chat', href: '/patient/chat', icon: MessageSquare, inBottomBar: true },
   { name: 'Meu Perfil', shortName: 'Perfil', href: '/patient/profile', icon: User },
 ];
 
