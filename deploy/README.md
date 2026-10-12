@@ -8,7 +8,7 @@ As labels devem rotear o hostname escolhido à porta 3000 do NutriAli. Fixar o b
 
 As variáveis AGENT_API_SECRET, FIREBASE_SERVICE_ACCOUNT_KEY e GROQ_API_KEY são fornecidas somente no runtime pela configuração de ambiente da hospedagem. Sem credenciais Admin e segredo, a API da Ali permanece bloqueada com 503. A primeira publicação da interface não significa que a integração está pronta.
 
-A IA dos chats, dos planos, da dica do dia e da análise de refeição usa a Groq (GROQ_API_KEY). GROQ_MODEL e GROQ_VISION_MODEL são opcionais e trocam o modelo sem novo build. Sem GROQ_API_KEY, o app usa o Gemini se houver GEMINI_API_KEY; sem nenhuma das duas, essas funções respondem 503 com um aviso claro para a tela.
+A IA dos chats, dos planos, da dica do dia, da análise de refeição e da foto do prato enviada para a Ali (POST /api/ali/meal-photo, que descreve o prato e estima as calorias em faixa) usa a Groq (GROQ_API_KEY). GROQ_MODEL e GROQ_VISION_MODEL são opcionais e trocam o modelo sem novo build. Sem GROQ_API_KEY, o app usa o Gemini se houver GEMINI_API_KEY; sem nenhuma das duas, essas funções respondem 503 com um aviso claro para a tela.
 
 ELEVENLABS_API_KEY (runtime) permite ao servidor emitir a credencial de cada conversa da Ali (POST /api/ali/session) para quem está logado. Ordem para ligar a autenticação dos agentes: primeiro o app no ar com a chave e as conversas funcionando, só depois "Ativar autenticação" nos dois agentes na ElevenLabs (tirando a lista de permitidos, que não se combina com autenticação). Sem a chave, a rota responde 503 e as telas usam só o ID do agente.
 
