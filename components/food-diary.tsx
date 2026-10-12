@@ -52,6 +52,7 @@ export function FoodDiary() {
   const [editImage, setEditImage] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [hasPlan, setHasPlan] = useState(false);
+  const [objective, setObjective] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
 
@@ -63,6 +64,7 @@ export function FoodDiary() {
     async function loadData() {
       if (user) {
         const data = await getUserData(user.uid);
+        setObjective(typeof data?.patientData?.objective === 'string' ? data.patientData.objective : '');
         if (data?.currentPlan?.days?.[0]?.meals) {
           setHasPlan(true);
           setTodayMeals(data.currentPlan.days[0].meals);
@@ -168,7 +170,8 @@ export function FoodDiary() {
         plannedItems: plannedItems.join(', '),
         actualNotes: notes,
         image: editImage, // Send base64 image if available
-        objective: 'Manutenção e Saúde'
+        // O objetivo de verdade, do prontuário; em branco, a IA analisa sem supor um.
+        objective
       });
 
       // Update state using functional update to ensure we have the latest state
