@@ -50,33 +50,12 @@ export default function PatientNutritionistSelectionPage() {
         const list = await getRegisteredNutritionists();
         setNutritionists(list);
 
-        // Fetch patient profile from Firestore
+        // O vínculo que vale é o do prontuário. Sem prontuário, a pessoa escolhe na lista abaixo e ele nasce
+        // nessa escolha: nada de montar um paciente de exemplo com idade, peso e altura inventados.
         if (user?.uid) {
           const patientSnap = await getDoc(doc(db, 'patients', user.uid));
           if (patientSnap.exists()) {
             setPatientData(patientSnap.data() as Patient);
-          } else {
-            const userSnap = await getDoc(doc(db, 'users', user.uid));
-            if (userSnap.exists()) {
-              const uData = userSnap.data();
-              if (uData.patientData) {
-                setPatientData(uData.patientData as Patient);
-              } else if (uData.nutritionistId) {
-                setPatientData({
-                  id: user.uid,
-                  name: uData.displayName || user.displayName || 'Paciente',
-                  email: user.email || '',
-                  age: 30,
-                  weight: 70,
-                  height: 170,
-                  objective: 'Saúde Geral',
-                  createdAt: new Date().toISOString(),
-                  measurements: [],
-                  nutritionistId: uData.nutritionistId,
-                  nutritionistName: uData.nutritionistData?.nutritionistName || uData.nutritionistName
-                } as Patient);
-              }
-            }
           }
         }
       } catch (err) {
