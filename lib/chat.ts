@@ -44,6 +44,15 @@ export function purgeLegacyChatCache(): void {
   }
 }
 
+/** Hora da mensagem; se for de outro dia, a data vai junto para a conversa não parecer toda de hoje. */
+export function formatMessageTime(createdAt: string, now: Date = new Date()): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return '';
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (date.toDateString() === now.toDateString()) return time;
+  return `${date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} ${time}`;
+}
+
 function toMessage(chatId: string, id: string, data: Record<string, any>): DirectMessage {
   return {
     id,

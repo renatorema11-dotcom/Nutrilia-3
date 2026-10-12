@@ -36,6 +36,17 @@ export function waterToday(stored: unknown, now: Date = new Date(), legacy?: str
   return isSameDay(record.date, now, legacy) && typeof record.amount === 'number' && record.amount > 0 ? Math.min(Math.round(record.amount), WATER_MAX_ML) : 0;
 }
 
+/**
+ * Refeições do plano que o paciente marcou hoje no diário como feitas (seguiu o plano ou comeu outra coisa).
+ * Refeição pulada, registro de outro dia e nome que não está no plano não contam.
+ */
+export function mealsDoneToday(stored: unknown, plannedMeals: string[], now: Date = new Date(), legacy?: string): number {
+  const diary = stored && typeof stored === 'object' ? stored as { date?: unknown; entries?: unknown } : {};
+  if (!isSameDay(diary.date, now, legacy) || !diary.entries || typeof diary.entries !== 'object') return 0;
+  const entries = diary.entries as Record<string, { status?: unknown } | undefined>;
+  return plannedMeals.filter((name) => entries[name]?.status === 'followed' || entries[name]?.status === 'different').length;
+}
+
 /** Humor de hoje, ou null se ainda não foi marcado. */
 export function moodToday(stored: unknown, now: Date = new Date(), legacy?: string): Mood | null {
   const record = stored && typeof stored === 'object' ? stored as { mood?: unknown; date?: unknown } : {};
