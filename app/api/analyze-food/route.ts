@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     }
 
     const buildPrompt = (withImage: boolean) => `Você é um nutricionista analítico e amigável.
-O paciente tem o objetivo de: "${objective}".
+${objective ? `O paciente tem o objetivo de: "${objective}".` : 'O paciente ainda não informou o objetivo: não suponha um.'}
 A refeição planejada para "${mealName}" era: ${plannedItems}.
 No entanto, o paciente relatou o seguinte consumo real: "${actualNotes}".
 ${withImage ? 'Uma imagem da refeição também foi anexada.' : ''}
