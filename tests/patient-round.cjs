@@ -141,6 +141,18 @@ async function check(name, fn) { await fn(); count++; }
     assert.deepEqual(plain(await run("syncLegacyProfile(db, 'p-pendente', now)")), { changed: false });
   });
 
+  await check('conquistas do dia: só conta refeição do plano marcada hoje como feita', async () => {
+    const done = (diary, meals) => { context.diary = diary; context.meals = meals; return run('mealsDoneToday(diary, meals, now)'); };
+    const entries = { 'Café da manhã': { status: 'followed' }, 'Almoço': { status: 'different' }, 'Jantar': { status: 'skipped' }, 'Ceia': { status: 'followed' } };
+    const meals = ['Café da manhã', 'Almoço', 'Jantar', 'Lanche'];
+    assert.equal(done({ date: '2026-10-11', entries }, meals), 2);
+    assert.equal(done({ date: '11/10/2026', entries }, meals), 2); // data no formato que a tela antiga gravava
+    assert.equal(done({ date: '2026-10-10', entries }, meals), 0); // registro de ontem
+    assert.equal(done({ date: '2026-10-11', entries }, []), 0);
+    assert.equal(done({ date: '2026-10-11' }, meals), 0);
+    assert.equal(done(null, meals), 0);
+  });
+
   // ───────────── Consultas marcadas à mão ─────────────
   store.set('users/nutri-1', { role: 'nutritionist', displayName: 'Dra. Carla Mendes', email: 'carla@exemplo.com' });
   store.set('users/nutri-2', { role: 'nutritionist', displayName: 'Dr. Paulo' });
