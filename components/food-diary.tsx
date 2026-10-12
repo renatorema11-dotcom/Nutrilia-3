@@ -8,31 +8,10 @@ import { Button } from '@/components/ui';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
 import { ApiError, postJson } from '@/lib/api-client';
+import { photoDataUrl } from '@/lib/photo';
 import { AliFoodLogs } from './ali-food-logs';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
-
-/** Reduz a foto antes de guardar e enviar: fica leve para o banco e para a análise da IA. */
-function shrinkPhoto(file: File, maxSide = 1024, quality = 0.8): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new window.Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
-      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Foto inválida'));
-    };
-    img.src = url;
-  });
-}
 
 interface MealEntry {
   status: MealStatus;
@@ -140,14 +119,8 @@ export function FoodDiary() {
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      shrinkPhoto(file).then(setEditImage).catch(() => {
-        // Se o aparelho não conseguir reduzir, segue com a foto original.
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setEditImage(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-      });
+      // Reduzida antes de guardar e enviar; se o aparelho não conseguir reduzir, segue a original.
+      photoDataUrl(file).then(setEditImage).catch((error) => console.error(error));
     }
   };
 
