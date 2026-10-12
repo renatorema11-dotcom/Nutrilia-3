@@ -7,6 +7,8 @@ import { useAuth } from '@/components/auth-provider';
 import { getPatients, Patient } from '@/lib/patients';
 import {
   DirectMessage,
+  MAX_MESSAGE_LENGTH,
+  formatMessageTime,
   sendDirectMessage,
   subscribeToDirectMessages
 } from '@/lib/chat';
@@ -296,10 +298,7 @@ function NutritionistChatContent() {
                                 isNutri ? 'text-teal-200' : 'text-slate-400'
                               }`}
                             >
-                              {new Date(msg.createdAt).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
+                              {formatMessageTime(msg.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -318,6 +317,7 @@ function NutritionistChatContent() {
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     placeholder={`Responder para ${selectedPatient.name}...`}
+                    maxLength={MAX_MESSAGE_LENGTH}
                     className="flex-1 bg-slate-50 border-slate-200 text-sm rounded-xl"
                   />
                   <Button
