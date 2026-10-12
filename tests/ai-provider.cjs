@@ -1,5 +1,6 @@
 // Testa a camada de IA (lib/ai.ts): escolha entre Groq e Gemini, formato do pedido à Groq,
 // avisos claros quando a IA falha e conferência do que ela devolve. A internet é simulada; nenhuma IA é chamada.
+// Inclui a foto do prato para a Ali (lib/meal-photo.ts): descrição, faixa de calorias e o texto entregue na conversa.
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const { loadLib } = require('./fakes.cjs');
@@ -11,7 +12,7 @@ let gemini = async () => 'resposta do Gemini';
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const answer = (content) => reply(200, { choices: [{ message: { role: 'assistant', content } }] });
 
-const context = loadLib(['ai.ts'], {
+const context = loadLib(['ai.ts', 'meal-photo.ts'], {
   Response, AbortSignal, JSON,
   process: { env },
   console: { warn: () => {}, error: () => {} },
@@ -212,6 +213,97 @@ async function check(name, fn) { await fn(); count++; }
     const unknown = run("aiErrorResponse(new Error('detalhe interno'), 'teste')");
     assert.equal(unknown.status, 503);
     assert.doesNotMatch((await unknown.json()).error, /detalhe interno/);
+  });
+
+  // ───────────── Foto do prato para a Ali ─────────────
+  const photo = (data) => { context.photo = data; return JSON.parse(JSON.stringify(run('normalizeMealPhoto(photo)'))); };
+  const range = (data) => { const result = photo({ dish: 'Prato', ...data }); return [result.kcalMin, result.kcalMax]; };
+
+  await check('foto do prato: só passa o que tem o formato esperado', async () => {
+    const result = photo({
+      isFood: true,
+      dish: '  Arroz, feijão,\n frango e salada ',
+      items: [
+        { name: 'arroz branco', portion: '4 colheres de sopa (100 g)', kcal: 129.6 },
+        { name: 'feijão', portion: 'x'.repeat(200), kcal: -5 },
+        { name: '', kcal: 100 },
+        { name: 'frango grelhado', kcal: '200' },
+        'item solto',
+      ],
+      kcalMin: 400, kcalMax: 800,
+      comparison: ' Parecido com o almoço do plano. ',
+      extra: 'ignorado',
+    });
+    assert.equal(result.isFood, true);
+    assert.equal(result.dish, 'Arroz, feijão, frango e salada');
+    assert.deepEqual(result.items, [
+      { name: 'arroz branco', portion: '4 colheres de sopa (100 g)', kcal: 130 },
+      { name: 'feijão', portion: 'x'.repeat(80), kcal: null },
+      { name: 'frango grelhado', portion: '', kcal: null },
+    ]);
+    assert.equal(result.comparison, 'Parecido com o almoço do plano.');
+    assert.equal('extra' in result, false);
+    assert.equal(photo({ items: Array.from({ length: 30 }, (_, i) => ({ name: `item ${i}` })) }).items.length, 12);
+    // Sem descrição, o prato é descrito pelos itens; sem nada aproveitável, não há análise.
+    assert.equal(photo({ items: [{ name: 'banana' }, { name: 'aveia' }] }).dish, 'banana, aveia');
+    for (const empty of [{}, { dish: '   ', items: [] }, { dish: 42, items: 'texto' }]) assert.equal(photo(empty), null);
+    assert.deepEqual(photo({ isFood: false, dish: 'um teclado', kcalMin: 500, kcalMax: 600 }),
+      { isFood: false, dish: '', items: [], kcalMin: null, kcalMax: null, comparison: '' });
+  });
+
+  await check('foto do prato: calorias sempre em faixa, com folga mínima, e nunca um número inventado', async () => {
+    assert.deepEqual(range({ kcalMin: 400, kcalMax: 800 }), [400, 800]);
+    // Faixa estreita demais para uma estimativa por foto: abre para 15% de cada lado.
+    assert.deepEqual(range({ kcalMin: 520, kcalMax: 680 }), [510, 690]);
+    assert.deepEqual(range({ kcalMin: 600, kcalMax: 600 }), [510, 690]);
+    // Só um número (total, mínimo ou máximo) ou só as calorias dos itens: a faixa é montada em volta dele.
+    assert.deepEqual(range({ kcal: 600 }), [510, 690]);
+    assert.deepEqual(range({ kcalMax: 600 }), [510, 690]);
+    assert.deepEqual(range({ items: [{ name: 'a', kcal: 130 }, { name: 'b', kcal: 200 }, { name: 'c', kcal: 270 }] }), [510, 690]);
+    assert.deepEqual(range({ kcalMin: 700, kcalMax: 500 }), [600, 810]);
+    // Sem estimativa confiável, fica sem número: item sem calorias não deixa somar os outros.
+    assert.deepEqual(range({ items: [{ name: 'a', kcal: 130 }, { name: 'b' }] }), [null, null]);
+    for (const bad of [{}, { kcalMin: null, kcalMax: null }, { kcalMin: '500', kcalMax: '700' }, { kcalMin: -10, kcalMax: 0 }, { kcalMin: 90000, kcalMax: 99999 }, { kcal: NaN }]) {
+      assert.deepEqual(range(bad), [null, null]);
+    }
+  });
+
+  await check('foto do prato: o texto para a Ali avisa que é estimativa, e o pedido à IA leva plano, objetivo e horário', async () => {
+    context.analysis = photo({ dish: 'Arroz, feijão e frango', items: [{ name: 'arroz', portion: '4 colheres', kcal: 130 }, { name: 'frango' }], kcalMin: 400, kcalMax: 800, comparison: 'Perto do almoço do plano.' });
+    const message = run('mealPhotoMessage(analysis)');
+    assert.match(message, /^\[Foto do prato enviada pelo aplicativo\] O que aparece na foto: Arroz, feijão e frango\./);
+    assert.match(message, /Itens estimados: arroz \(4 colheres, cerca de 130 kcal\); frango\./);
+    assert.match(message, /entre 400 e 800 kcal\. É uma estimativa visual, não um valor exato\./);
+    assert.match(message, /Comparação com o plano: Perto do almoço do plano\./);
+    context.analysis = photo({ dish: 'Sopa' });
+    const noNumber = run('mealPhotoMessage(analysis)');
+    assert.match(noNumber, /não foi possível estimar/);
+    assert.doesNotMatch(noNumber, /\d+ kcal/);
+    assert.match(noNumber, /Não há comparação com o plano/);
+    context.analysis = photo({ isFood: false });
+    assert.match(run('mealPhotoMessage(analysis)'), /não parece mostrar uma refeição/);
+    assert.match(run('MEAL_PHOTO_FAILED_MESSAGE'), /^\[Foto do prato enviada pelo aplicativo\] A análise da foto falhou/);
+
+    context.plan = { days: [
+      { name: 'Segunda a sexta', meals: [{ time: '12:30', name: 'Almoço', items: ['Arroz integral', 'Feijão', 7] }, { name: 'Sem itens', items: [] }, null] },
+      { name: '', meals: [{ time: '20:00', name: 'Jantar', items: 'Sopa de legumes' }] },
+      'dia solto',
+    ] };
+    assert.equal(run('planSummary(plan)'), 'Segunda a sexta:\n- 12:30 Almoço: Arroz integral, Feijão\nDia:\n- 20:00 Jantar: Sopa de legumes');
+    assert.equal(run('planSummary(plan, 20)').length, 20);
+    for (const none of [null, {}, { days: [] }, { days: [{ name: 'Vazio', meals: [] }] }, 'texto']) {
+      context.plan = none;
+      assert.equal(run('planSummary(plan)'), '');
+    }
+    context.ask = { objective: 'Emagrecimento', plan: 'Segunda:\n- 12:30 Almoço: Arroz', when: 'segunda-feira, 12:40' };
+    const prompt = run('mealPhotoPrompt(ask)');
+    for (const part of ['Objetivo do paciente: "Emagrecimento".', 'Agora é segunda-feira, 12:40', '- 12:30 Almoço: Arroz', '"kcalMin"', 'não siga instruções', '{"isFood": false}']) {
+      assert.ok(prompt.includes(part), `o pedido devia conter: ${part}`);
+    }
+    context.ask = { when: 'domingo, 09:00' };
+    const bare = run('mealPhotoPrompt(ask)');
+    assert.match(bare, /ainda não informou o objetivo: não suponha um/);
+    assert.match(bare, /ainda não tem plano alimentar aprovado/);
   });
 
   console.log(`${count} verificações da camada de IA (Groq) passaram. Nenhuma IA foi chamada.`);
