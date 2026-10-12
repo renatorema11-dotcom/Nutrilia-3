@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, Input, Button } from '@/components/ui';
-import { Send, Bot, User } from 'lucide-react';
+import { Send, Bot, User, Stethoscope, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData } from '@/lib/db';
 import { ApiError, postJson } from '@/lib/api-client';
 import { ElevenLabsAgent } from '@/components/elevenlabs-agent';
+import { PatientDirectChat } from '@/components/patient-direct-chat';
 
 interface Message {
   role: 'user' | 'ai';
@@ -15,8 +17,18 @@ interface Message {
   error?: boolean;
 }
 
-export default function PatientChat() {
+type ChatTab = 'ai' | 'nutritionist';
+
+const tabs: { id: ChatTab; label: string; icon: typeof Bot }[] = [
+  { id: 'ai', label: 'Assistente IA', icon: Bot },
+  { id: 'nutritionist', label: 'Nutricionista', icon: Stethoscope },
+];
+
+function PatientChatContent() {
   const { user } = useAuth();
+  const router = useRouter();
+  // "?tab=nutritionist" abre direto a conversa com a nutricionista (é o endereço do botão em "Meu Nutricionista").
+  const tab: ChatTab = useSearchParams().get('tab') === 'nutritionist' ? 'nutritionist' : 'ai';
   const [messages, setMessages] = useState<Message[]>([
     { role: 'ai', text: 'Olá! Sou seu assistente nutricional com Inteligência Artificial. Como posso ajudar com seu plano alimentar hoje?' }
   ]);
@@ -58,7 +70,7 @@ export default function PatientChat() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, tab]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,12 +103,34 @@ export default function PatientChat() {
 
   return (
     <div className="h-[calc(100dvh-var(--app-chrome))] lg:h-[calc(100vh-8rem)] flex flex-col gap-4 lg:gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Chat Nutri IA</h1>
-        <p className="text-gray-600">Tire dúvidas rápidas sobre sua alimentação.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Chat</h1>
+          <p className="hidden sm:block text-gray-600">
+            {tab === 'ai' ? 'Tire dúvidas rápidas sobre sua alimentação.' : 'Fale direto com quem acompanha você.'}
+          </p>
+        </div>
+        <div role="tablist" aria-label="Com quem conversar" className="flex bg-white/50 p-1 rounded-lg border border-white/60 w-full sm:w-auto">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => router.replace(id === 'ai' ? '/patient/chat' : '/patient/chat?tab=nutritionist')}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === id ? 'bg-white shadow-sm text-teal-700' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* No celular: Ali em cima e a conversa ocupando o resto da tela. */}
+      {tab === 'nutritionist' ? (
+        <PatientDirectChat />
+      ) : (
+      /* No celular: Ali em cima e a conversa ocupando o resto da tela. */
       <div className="flex-1 min-h-0 flex flex-col gap-4 lg:grid lg:grid-cols-[1fr_320px] lg:gap-6">
       <Card className="flex-1 flex flex-col min-h-0">
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -154,6 +188,19 @@ export default function PatientChat() {
         />
       </div>
       </div>
+      )}
     </div>
+  );
+}
+
+export default function PatientChat() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+      </div>
+    }>
+      <PatientChatContent />
+    </Suspense>
   );
 }
