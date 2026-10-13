@@ -6,13 +6,35 @@ import { Card, CardContent, Button, Input } from '@/components/ui';
 import { Apple, User, Stethoscope } from 'lucide-react';
 import Link from 'next/link';
 import { LanguageSelector } from '@/components/language-selector';
+import { CRN_REGIONS, parseCrn } from '@/lib/crn';
+
+function registerErrorMessage(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error
+    && typeof error.code === 'string' ? error.code : '';
+  switch (code) {
+    case 'auth/email-already-in-use':
+      return 'Já existe uma conta com este e-mail. Entre pelo login; se esqueceu a senha, use "Esqueci minha senha".';
+    case 'auth/weak-password':
+      return 'A senha precisa ter pelo menos 6 caracteres.';
+    case 'auth/invalid-email':
+      return 'Digite um e-mail válido.';
+    case 'auth/too-many-requests':
+      return 'Houve muitas tentativas. Aguarde um pouco antes de tentar novamente.';
+    case 'auth/network-request-failed':
+      return 'Não foi possível conectar. Confira a conexão e tente novamente.';
+    default:
+      return 'Não foi possível criar a conta agora. Confira os dados e tente de novo.';
+  }
+}
 
 export default function Register() {
   const [role, setRole] = useState<UserRole>('patient');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [crn, setCrn] = useState('');
+  const [crnRegion, setCrnRegion] = useState('');
+  const [crnNumber, setCrnNumber] = useState('');
+  const [formError, setFormError] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [phone, setPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -21,25 +43,38 @@ export default function Register() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+    setFormError('');
+    let extraData = {};
+    if (role === 'nutritionist') {
+      // O formato do CRN é conferido aqui; se a inscrição existe, quem confere é o responsável, antes de aprovar.
+      const checked = parseCrn(`CRN-${crnRegion} ${crnNumber}`);
+      if (!crnRegion || !checked.ok) {
+        setFormError(!crnRegion ? 'Escolha a região do seu CRN.' : checked.ok ? '' : checked.error);
+        return;
+      }
+      extraData = { crn: checked.crn, specialty: specialty.trim(), phone: phone.trim() };
+    }
     setIsLoading(true);
-    
+
     try {
-      const extraData = role === 'nutritionist' ? { crn, specialty, phone } : {};
       await registerWithEmail(email, password, name, role, extraData);
     } catch (error) {
       console.error('Registration error:', error);
-      alert('Erro ao criar conta. Verifique seus dados.');
+      setFormError(registerErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleSignUp = async () => {
+    setFormError('');
     try {
       setIsLoadingGoogle(true);
       await loginWithGoogle(role);
     } catch (error) {
       console.error('Google Sign-Up Error:', error);
+      setFormError('Não foi possível concluir o cadastro com o Google. Tente de novo.');
     } finally {
       setIsLoadingGoogle(false);
     }
@@ -88,6 +123,19 @@ export default function Register() {
                 <span className="font-medium">Nutricionista</span>
               </button>
             </div>
+
+            {role === 'nutritionist' && (
+              <p className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
+                O cadastro de nutricionista passa por uma análise: conferimos o seu CRN antes de liberar o acesso.
+                Você recebe um e-mail quando for aprovado.
+              </p>
+            )}
+
+            {formError && (
+              <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                {formError}
+              </p>
+            )}
 
             <Button
               type="button"
@@ -153,14 +201,33 @@ export default function Register() {
               {role === 'nutritionist' && (
                 <div className="space-y-4 pt-4 border-t border-slate-100">
                   <h3 className="text-sm font-semibold text-slate-800">Informações Profissionais</h3>
-                  <Input
-                    id="crn"
-                    label="CRN"
-                    required
-                    value={crn}
-                    onChange={(e) => setCrn(e.target.value)}
-                    placeholder="Ex: CRN-3 12345"
-                  />
+                  <div className="space-y-1">
+                    <label htmlFor="crn-number" className="block text-sm font-medium text-slate-700">CRN</label>
+                    <div className="flex gap-2">
+                      <select
+                        id="crn-region"
+                        aria-label="Região do CRN"
+                        required
+                        value={crnRegion}
+                        onChange={(e) => setCrnRegion(e.target.value)}
+                        className="w-32 shrink-0 rounded-lg bg-white/80 border border-white/50 px-3 py-2 text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm"
+                      >
+                        <option value="">Região</option>
+                        {CRN_REGIONS.map((region) => (
+                          <option key={region} value={region}>CRN-{region}</option>
+                        ))}
+                      </select>
+                      <Input
+                        id="crn-number"
+                        required
+                        value={crnNumber}
+                        onChange={(e) => setCrnNumber(e.target.value)}
+                        placeholder="Número da inscrição"
+                        maxLength={12}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
                   <Input
                     id="specialty"
                     label="Especialidade Principal"
@@ -180,8 +247,8 @@ export default function Register() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full mt-4">
-                Criar conta
+              <Button type="submit" disabled={isLoading} className="w-full mt-4">
+                {isLoading ? 'Criando conta...' : 'Criar conta'}
               </Button>
             </form>
           </CardContent>
