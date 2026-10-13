@@ -44,13 +44,33 @@ function loginErrorMessage(error: unknown): string {
   }
 }
 
+function resetErrorMessage(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error
+    && typeof error.code === 'string' ? error.code : '';
+  switch (code) {
+    case 'auth/invalid-email':
+    case 'auth/missing-email':
+      return 'Digite um e-mail válido.';
+    case 'auth/too-many-requests':
+      return 'Houve muitas tentativas. Aguarde um pouco antes de tentar novamente.';
+    case 'auth/network-request-failed':
+      return 'Não foi possível conectar. Confira a conexão e tente novamente.';
+    default:
+      return 'Não foi possível enviar o e-mail agora. Tente de novo em instantes.';
+  }
+}
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const { loginWithGoogle, loginWithEmail, user, role, ready, mustChangePassword } = useAuth();
+  // "Esqueci minha senha": troca o formulário de entrada pelo pedido do link.
+  const [resetMode, setResetMode] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetNotice, setResetNotice] = useState('');
+  const { loginWithGoogle, loginWithEmail, sendPasswordReset, user, role, ready, mustChangePassword } = useAuth();
   const router = useRouter();
   const sessionChecked = useRef(false);
 
@@ -77,6 +97,32 @@ export default function Login() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSendingReset) return;
+    setLoginError('');
+    setResetNotice('');
+    setIsSendingReset(true);
+    // A mesma resposta com ou sem conta: a tela não revela quais e-mails estão cadastrados.
+    const sent = 'Se existir uma conta com este e-mail, enviamos um link para criar uma senha nova. Confira também a caixa de spam.';
+    try {
+      await sendPasswordReset(email.trim());
+      setResetNotice(sent);
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : '';
+      if (code === 'auth/user-not-found') setResetNotice(sent);
+      else setLoginError(resetErrorMessage(error));
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  const toggleReset = (open: boolean) => {
+    setResetMode(open);
+    setLoginError('');
+    setResetNotice('');
   };
 
   const handleGoogleSignIn = async () => {
@@ -120,6 +166,41 @@ export default function Login() {
                 {loginError}
               </p>
             )}
+            {resetMode ? (
+              <form className="space-y-4" onSubmit={handleReset}>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Esqueci minha senha</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Digite o e-mail da sua conta. Enviamos um link para você criar uma senha nova.
+                  </p>
+                </div>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  label="Email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu@email.com"
+                />
+                {resetNotice && (
+                  <p role="status" className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
+                    {resetNotice}
+                  </p>
+                )}
+                <Button type="submit" disabled={isSendingReset} className="w-full">
+                  {isSendingReset ? 'Enviando...' : 'Enviar link'}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => toggleReset(false)}
+                  className="w-full text-center text-sm font-medium text-teal-700 hover:text-teal-800"
+                >
+                  Voltar para o login
+                </button>
+              </form>
+            ) : (
+            <>
             <Button
               type="button"
               variant="outline"
@@ -175,10 +256,21 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
               />
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => toggleReset(true)}
+                  className="text-sm font-medium text-teal-700 hover:text-teal-800"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
               <Button type="submit" disabled={isLoading || isLoadingGoogle} className="w-full">
                 {isLoading ? 'Entrando...' : 'Entrar'}
               </Button>
             </form>
+            </>
+            )}
           </CardContent>
         </Card>
 
