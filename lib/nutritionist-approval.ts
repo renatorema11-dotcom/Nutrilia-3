@@ -1,6 +1,8 @@
 // Aprovação do cadastro de nutricionistas: quem se cadastra fica "em análise" até o responsável pelo NutriAli aprovar.
 // O navegador não muda a situação do cadastro (as regras do banco não deixam): tudo passa por aqui, no servidor.
 // Os avisos saem pelo Gmail que o responsável conectou no app; se não houver, a lista de aprovações continua valendo.
+// O aviso leva um link assinado que abre o cadastro daquela pessoa já com "Aprovar" e "Recusar", sem pedir login.
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 import { CFN_LOOKUP_URL, parseCrn } from './crn';
 import { emailLayout, escapeHtml, getAccess, isValidEmail, p, sendMail } from './google-workspace';
@@ -55,6 +57,45 @@ function toRecord(uid: string, profile: Record<string, unknown>): ApprovalRecord
   };
 }
 
+// ───────────── Link do e-mail de aviso ─────────────
+// O link vale para UM cadastro e por 30 dias. Quem o tem pode ver os dados daquela pessoa e aprovar ou recusar:
+// por isso só vai para a caixa de e-mail dos responsáveis. É assinado com um segredo do servidor (o mesmo
+// AGENT_API_SECRET, com outro rótulo); sem o segredo configurado, o aviso sai sem o link direto.
+const LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function linkSignature(payload: string): string | null {
+  const secret = process.env.AGENT_API_SECRET;
+  if (!secret || secret.length < 32) return null;
+  return createHmac('sha256', secret).update('nutriali-approval-link:' + payload).digest('base64url');
+}
+
+/** Monta o código do link para o cadastro informado. Devolve null se o servidor não tiver o segredo. */
+export function approvalLinkToken(uid: string, now = new Date()): string | null {
+  const payload = uid + '.' + Math.floor((now.getTime() + LINK_TTL_MS) / 1000);
+  const signature = linkSignature(payload);
+  return signature ? Buffer.from(payload, 'utf8').toString('base64url') + '.' + signature : null;
+}
+
+export type LinkCheck = { ok: true; uid: string } | { ok: false; reason: 'invalid' | 'expired' };
+
+/** Confere o código do link: assinatura e validade. */
+export function readApprovalLink(token: unknown, now = new Date()): LinkCheck {
+  if (typeof token !== 'string' || token.length > 400) return { ok: false, reason: 'invalid' };
+  const parts = token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return { ok: false, reason: 'invalid' };
+  const payload = Buffer.from(parts[0], 'base64url').toString('utf8');
+  const expected = linkSignature(payload);
+  if (!expected) return { ok: false, reason: 'invalid' };
+  const given = Buffer.from(parts[1]);
+  const wanted = Buffer.from(expected);
+  if (given.length !== wanted.length || !timingSafeEqual(given, wanted)) return { ok: false, reason: 'invalid' };
+  const cut = payload.lastIndexOf('.');
+  const uid = payload.slice(0, cut);
+  const expires = Number(payload.slice(cut + 1));
+  if (cut < 1 || !Number.isFinite(expires)) return { ok: false, reason: 'invalid' };
+  return expires * 1000 < now.getTime() ? { ok: false, reason: 'expired' } : { ok: true, uid };
+}
+
 /** Gmail conectado de um dos responsáveis, para enviar os avisos. Sem nenhum conectado, devolve null. */
 async function adminSender(db: Firestore, preferred: string[] = []): Promise<{ token: string; email: string } | null> {
   for (const email of [...new Set([...preferred.map((item) => item.toLowerCase()), ...adminEmails()])]) {
@@ -90,19 +131,26 @@ async function notifyAdmins(db: Firestore, record: ApprovalRecord, now: Date): P
   try {
     const sender = await adminSender(db);
     if (!sender) return false;
-    const html = emailLayout('Cadastro de nutricionista aguardando aprovação', [
+    // Com o link assinado, o botão abre o cadastro desta pessoa já com "Aprovar" e "Recusar", sem login.
+    const token = approvalLinkToken(record.uid, now);
+    const note = (text: string) => p('<span style="font-size:13px;color:#5b6f67">' + text + '</span>');
+    const html = (to: string) => emailLayout('Cadastro de nutricionista aguardando aprovação', [
       p(`<strong>${escapeHtml(record.name)}</strong> se cadastrou como nutricionista no NutriAli e está aguardando a sua aprovação.`),
       dataLine('E-mail', record.email),
       dataLine('CRN informado', record.crn),
       dataLine('Especialidade', record.specialty),
       dataLine('Telefone', record.phone),
       p('Antes de aprovar, confira na consulta do Conselho Federal de Nutrição se o nome e o número da inscrição batem e se o registro está ativo.'),
-      `<p style="margin:16px 0 0">${button(`${PUBLIC_APP_URL}/admin/aprovacoes`, 'Abrir aprovações')}${button(CFN_LOOKUP_URL, 'Conferir no CFN')}</p>`,
-    ].join(''), 'Aviso automático do NutriAli. Enquanto você não aprovar, a pessoa não acessa a área de nutricionista nem aparece para os pacientes.');
+      '<p style="margin:16px 0 0">'
+        + (token ? button(PUBLIC_APP_URL + '/admin/aprovar#' + token, 'Ver cadastro e aprovar') : button(PUBLIC_APP_URL + '/admin/aprovacoes', 'Abrir aprovações'))
+        + button(CFN_LOOKUP_URL, 'Conferir no CFN') + '</p>',
+      token ? note('O primeiro botão abre o cadastro com as opções de aprovar ou recusar, sem precisar entrar no aplicativo. Não encaminhe este e-mail: quem tiver o botão consegue decidir este cadastro.') : '',
+      note('Para ver todos os cadastros, entre no aplicativo com o Google usando ' + escapeHtml(to) + ' e abra "Aprovações" no menu.'),
+    ].join(''), 'Aviso automático do NutriAli. Enquanto você não aprovar, a pessoa continua em análise: não acessa a área de nutricionista nem aparece para os pacientes.');
     let sent = false;
     for (const to of recipients) {
       try {
-        await sendMail(sender.token, { fromName: 'NutriAli', fromEmail: sender.email, to, subject: `Nutricionista aguardando aprovação: ${record.name}`, html });
+        await sendMail(sender.token, { fromName: 'NutriAli', fromEmail: sender.email, to, subject: `Nutricionista aguardando aprovação: ${record.name}`, html: html(to) });
         sent = true;
       } catch {
         console.error('Aprovação: falha ao enviar o aviso a um dos responsáveis.');
@@ -146,13 +194,20 @@ export async function submitApproval(db: Firestore, uid: string, input: unknown,
   };
   // Dados corrigidos depois do primeiro aviso geram um aviso novo, para o responsável não aprovar pelo dado antigo.
   const lastTry = Date.parse(String(profile.approvalNotifyTriedAt || ''));
-  const alreadyNotified = typeof profile.approvalNotifiedAt === 'string' && !changed;
-  const shouldNotify = !alreadyNotified && (changed || !(now.getTime() - lastTry < NOTIFY_RETRY_MS));
+  const notifiedBefore = typeof profile.approvalNotifiedAt === 'string' && !changed;
+  // Aviso antigo, enviado antes de existir o link direto: sai mais um, já com o botão de aprovar.
+  const linkAvailable = approvalLinkToken(uid, now) !== null;
+  const needsLink = notifiedBefore && linkAvailable && profile.approvalLinkSent !== true;
+  const alreadyNotified = notifiedBefore && !needsLink;
+  const shouldNotify = !alreadyNotified && (changed || needsLink || !(now.getTime() - lastTry < NOTIFY_RETRY_MS));
   let notified = alreadyNotified;
   if (shouldNotify) {
     update.approvalNotifyTriedAt = now.toISOString();
     notified = await notifyAdmins(db, toRecord(uid, { ...profile, ...update }), now);
-    if (notified) update.approvalNotifiedAt = now.toISOString();
+    if (notified) {
+      update.approvalNotifiedAt = now.toISOString();
+      update.approvalLinkSent = linkAvailable;
+    }
   }
   await ref.set(update, { merge: true });
   return { ok: true, approval: 'pending', crn: checked.crn, notified };
@@ -177,7 +232,7 @@ export type DecisionResult =
  * O responsável aprova ou recusa um cadastro. A decisão fica registrada com data e autor, e a nutricionista recebe
  * um e-mail (se houver Gmail conectado para enviar). Contas antigas, sem o campo de aprovação, não passam por aqui.
  */
-export async function decideApproval(db: Firestore, adminEmail: string, uid: unknown, decision: unknown, now = new Date()): Promise<DecisionResult> {
+export async function decideApproval(db: Firestore, adminEmail: string, uid: unknown, decision: unknown, now = new Date(), how = ''): Promise<DecisionResult> {
   if (typeof uid !== 'string' || !uid || uid.length > 128 || uid.includes('/')) return { ok: false, status: 422, error: 'Cadastro inválido.' };
   if (decision !== 'approve' && decision !== 'reject') return { ok: false, status: 422, error: 'Decisão inválida.' };
   const ref = db.collection('users').doc(uid);
@@ -188,7 +243,8 @@ export async function decideApproval(db: Firestore, adminEmail: string, uid: unk
   }
   const approval: Approval = decision === 'approve' ? 'approved' : 'rejected';
   if (profile.approval === approval) return { ok: true, approval, emailed: false };
-  await ref.set({ approval, approvalDecidedAt: now.toISOString(), approvalDecidedBy: adminEmail.toLowerCase() }, { merge: true });
+  const decidedBy = adminEmail.toLowerCase() + (how ? ' (' + how + ')' : '');
+  await ref.set({ approval, approvalDecidedAt: now.toISOString(), approvalDecidedBy: decidedBy }, { merge: true });
 
   let emailed = false;
   const record = toRecord(uid, profile);
@@ -220,4 +276,32 @@ export async function decideApproval(db: Firestore, adminEmail: string, uid: unk
     }
   }
   return { ok: true, approval, emailed };
+}
+
+export type LinkView =
+  | { ok: true; record: ApprovalRecord }
+  | { ok: false; status: number; error: string };
+
+const LINK_ERRORS = {
+  invalid: 'Este link não é válido. Abra o e-mail de aviso mais recente ou entre no aplicativo e abra "Aprovações".',
+  expired: 'Este link venceu. Entre no aplicativo com o Google e abra "Aprovações" no menu.',
+};
+
+/** Cadastro apontado pelo link do e-mail, para a tela de aprovar mostrar os dados. */
+export async function approvalByLink(db: Firestore, token: unknown, now = new Date()): Promise<LinkView> {
+  const link = readApprovalLink(token, now);
+  if (!link.ok) return { ok: false, status: link.reason === 'expired' ? 410 : 404, error: LINK_ERRORS[link.reason] };
+  const snap = await db.collection('users').doc(link.uid).get();
+  const profile = snap.exists ? snap.data() || {} : null;
+  if (!profile || profile.role !== 'nutritionist' || typeof profile.approval !== 'string') {
+    return { ok: false, status: 404, error: 'Este cadastro não foi encontrado.' };
+  }
+  return { ok: true, record: toRecord(link.uid, profile) };
+}
+
+/** Decisão tomada pelo link do e-mail: vale como a do responsável (o link só vai para a caixa dele). */
+export async function decideByLink(db: Firestore, token: unknown, decision: unknown, now = new Date()): Promise<DecisionResult> {
+  const link = readApprovalLink(token, now);
+  if (!link.ok) return { ok: false, status: link.reason === 'expired' ? 410 : 404, error: LINK_ERRORS[link.reason] };
+  return decideApproval(db, adminEmails()[0] || 'responsavel', link.uid, decision, now, 'link do e-mail');
 }
