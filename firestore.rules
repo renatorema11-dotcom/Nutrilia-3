@@ -10,14 +10,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function roleOf(uid) {
-      return get(/databases/$(database)/documents/users/$(uid)).data.role;
+    // Conta de nutricionista liberada: cadastro aprovado pelo responsável do NutriAli. Contas de antes da aprovação
+    // existir não têm o campo "approval" e continuam valendo; "pending" e "rejected" não contam como nutricionista.
+    function approvedNutritionist(uid) {
+      let profile = get(/databases/$(database)/documents/users/$(uid)).data;
+      return profile.role == 'nutritionist' && profile.get('approval', 'approved') == 'approved';
     }
 
     function isNutritionist() {
       return isSignedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && roleOf(request.auth.uid) == 'nutritionist';
+        && approvedNutritionist(request.auth.uid);
     }
 
     function patientRecord(patientId) {
@@ -37,16 +40,22 @@ service cloud.firestore {
     // ─────────────────────────────────────────────────────────────
     // users/{uid} — perfil de cada conta.
     // Leitura: só a própria pessoa. A lista de nutricionistas que o paciente vê vem do servidor (/api/nutritionists).
-    // Criação: a própria pessoa (paciente ou nutricionista) ou a nutricionista criando a conta de um PACIENTE.
-    // Atualização: só a própria pessoa, sem mexer em role nem em email (ninguém se promove a nutricionista).
+    // Criação: a própria pessoa como paciente, ou como nutricionista "em análise" (approval = 'pending');
+    // ou a nutricionista aprovada criando a conta de um PACIENTE.
+    // Atualização: só a própria pessoa, sem mexer em role, email, CRN nem na aprovação: ninguém se promove a
+    // nutricionista nem se aprova sozinho. Quem aprova, recusa e grava o CRN conferido é o servidor.
     // ─────────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
       allow create: if isSignedIn() && request.auth.uid == uid
-        && request.resource.data.role in ['patient', 'nutritionist'];
+        && (request.resource.data.role == 'patient'
+          || (request.resource.data.role == 'nutritionist' && request.resource.data.get('approval', '') == 'pending'))
+        && !request.resource.data.keys().hasAny(['approvalDecidedAt', 'approvalDecidedBy', 'approvalNotifiedAt',
+          'approvalNotifyTriedAt', 'approvalRequestedAt']);
       allow create: if isNutritionist() && request.resource.data.role == 'patient';
       allow update: if isSignedIn() && request.auth.uid == uid
-        && !changedKeys().hasAny(['role', 'email']);
+        && !changedKeys().hasAny(['role', 'email', 'crn', 'approval', 'approvalDecidedAt', 'approvalDecidedBy',
+          'approvalNotifiedAt', 'approvalNotifyTriedAt', 'approvalRequestedAt']);
       allow delete: if false;
     }
 
@@ -54,7 +63,7 @@ service cloud.firestore {
     // patients/{patientId} — prontuário (dado sensível de saúde).
     // A nutricionista só enxerga e altera pacientes em que nutritionistId é o uid DELA.
     // O paciente lê o próprio prontuário e só pode: criá-lo vazio de plano ao se cadastrar,
-    // trocar nome e foto, e escolher a nutricionista (que precisa ser uma conta de nutricionista).
+    // trocar nome e foto, e escolher a nutricionista (que precisa ser uma conta de nutricionista aprovada).
     // Peso, medições e plano: só a nutricionista responsável ou a Ali (servidor).
     // ─────────────────────────────────────────────────────────────
     match /patients/{patientId} {
@@ -72,12 +81,12 @@ service cloud.firestore {
           'nutritionistId', 'nutritionistName', 'nutritionistEmail', 'nutritionistCRN', 'nutritionistPhoto', 'nutritionistSpecialty'])
         && request.resource.data.get('currentPlan', null) == null
         && request.resource.data.get('pastPlans', []).size() == 0
-        && (!('nutritionistId' in request.resource.data) || roleOf(request.resource.data.nutritionistId) == 'nutritionist');
+        && (!('nutritionistId' in request.resource.data) || approvedNutritionist(request.resource.data.nutritionistId));
 
       allow update: if isSignedIn() && request.auth.uid == patientId
         && changedKeys().hasOnly(['name', 'photoURL', 'nutritionistId', 'nutritionistName', 'nutritionistEmail',
           'nutritionistCRN', 'nutritionistPhoto', 'nutritionistSpecialty'])
-        && (!changedKeys().hasAny(['nutritionistId']) || roleOf(request.resource.data.nutritionistId) == 'nutritionist');
+        && (!changedKeys().hasAny(['nutritionistId']) || approvedNutritionist(request.resource.data.nutritionistId));
     }
 
     // Refeições anotadas pela Ali (subcoleção: precisa de regra própria).
