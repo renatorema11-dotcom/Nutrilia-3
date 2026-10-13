@@ -10,7 +10,8 @@ const assert = require('node:assert/strict');
 const strip = (file) => stripTypeScriptTypes(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'))
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export (?=(async )?function|const|let)/gm, '');
-const code = `${strip('lib/firebase-admin.ts')}\n${strip('app/api/agent/nutritionist-action/route.ts')}\nthis.POST = POST;`;
+// A regra de "cadastro aprovado" é a de verdade (lib/nutritionist-approval.ts), não uma cópia.
+const code = `${strip('lib/firebase-admin.ts')}\n${strip('lib/nutritionist-approval.ts')}\n${strip('app/api/agent/nutritionist-action/route.ts')}\nthis.POST = POST;`;
 const secret = 'local-test-secret-not-for-deployment-123456';
 const cfg = { projectId: 'nutri-test', firestoreDatabaseId: 'named-test-db' };
 const reports = [];
@@ -20,7 +21,7 @@ async function test(name, options, status, inspect = () => {}) {
   const role = options.role === undefined ? 'nutritionist' : options.role;
   const db = {
     collection: (col) => ({
-      doc: (uid) => ({ get: async () => { events.push(['profile', col, uid]); return { exists: role !== null, data: () => ({ role }) }; } }),
+      doc: (uid) => ({ get: async () => { events.push(['profile', col, uid]); return { exists: role !== null, data: () => ({ role, ...(options.approval ? { approval: options.approval } : {}) }) }; } }),
       add: async (data) => { events.push(['audit', col, data]); },
     }),
   };
@@ -34,6 +35,11 @@ async function test(name, options, status, inspect = () => {}) {
     cancelConsultation: fixed('cancelConsultation'),
     createEvent: fixed('createEvent'),
     sendEmail: fixed('sendEmail', { email: { to: 'Paciente Fictício', subject: 'Assunto' } }),
+    rescheduleConsultation: fixed('rescheduleConsultation'),
+    logMeasurement: fixed('logMeasurement', { measurement: { weight: 71.8 } }),
+    sendChatMessage: fixed('sendChatMessage'),
+    sendPlanToPatient: fixed('sendPlanToPatient'),
+    weekSummary: fixed('weekSummary', { summary: { patients: 4 } }),
     ...options.assistant,
   };
   const env = { AGENT_API_SECRET: secret, FIREBASE_SERVICE_ACCOUNT_KEY: JSON.stringify({ project_id: cfg.projectId }), ...options.env };
@@ -78,12 +84,15 @@ async function test(name, options, status, inspect = () => {}) {
   await test('Conta anônima', { anonymous: true }, 403);
   await test('Paciente não usa a Ali da nutricionista', { role: 'patient' }, 403);
   await test('Conta sem perfil', { role: null }, 403);
+  await test('Nutricionista com cadastro em análise não usa a Ali', { approval: 'pending' }, 403);
+  await test('Nutricionista com cadastro recusado não usa a Ali', { approval: 'rejected' }, 403);
+  await test('Nutricionista aprovada usa a Ali', { approval: 'approved' }, 200);
   await test('JSON inválido', { rawBody: '{' }, 400);
   await test('Corpo nulo', { rawBody: 'null' }, 400);
   await test('Payload em lista', { body: { action: 'list_patients', payload: [] } }, 400);
   await test('Ação fora da lista', { body: { action: 'delete_patient' } }, 400);
   await test('Ação de paciente não vale aqui', { body: { action: 'log_meal', confirmed: true } }, 400);
-  for (const action of ['schedule_consultation', 'cancel_consultation', 'create_event', 'send_email']) {
+  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email']) {
     await test(`Exige confirmação: ${action}`, { body: { action, payload: {} } }, 422);
     await test(`Confirmação em texto não vale: ${action}`, { body: { action, confirmed: 'true', payload: {} } }, 422);
   }
@@ -106,6 +115,28 @@ async function test(name, options, status, inspect = () => {}) {
     assert.deepEqual(Object.keys(audit[2]).sort(), ['action', 'actor', 'createdAt', 'nutritionistId', 'patientUid', 'result']);
     assert.ok(!JSON.stringify(audit[2]).includes('Texto reservado'));
     assert.equal(json.email.subject, 'Assunto');
+  });
+  await test('Resumo da semana é leitura: roda sem confirmação, com a busca de último acesso', { body: { action: 'get_week_summary' } }, 200, (_, json, acted) => {
+    assert.deepEqual(acted[0].slice(0, 2), ['weekSummary', 'nutri-A']);
+    assert.equal(typeof acted[0][2], 'function');
+    assert.equal(json.summary.patients, 4);
+  });
+  await test('Remarcar consulta confirmada recebe paciente, dia e hora', { body: { action: 'reschedule_consultation', confirmed: true, payload: { patientName: 'Ana', date: '2026-10-22', time: '16:30' } } }, 200, (_, __, acted) => {
+    assert.equal(JSON.stringify(acted[0]), JSON.stringify(['rescheduleConsultation', 'nutri-A', { patientName: 'Ana', date: '2026-10-22', time: '16:30' }]));
+  });
+  await test('Medição confirmada é anotada e auditada sem os números', { body: { action: 'log_measurement', confirmed: true, payload: { patientName: 'Ana', weight: 71.8 } } }, 200, (events, json, acted) => {
+    assert.equal(acted[0][0], 'logMeasurement');
+    assert.equal(json.measurement.weight, 71.8);
+    const audit = events.find((e) => e[0] === 'audit');
+    assert.equal(audit[2].action, 'log_measurement');
+    assert.ok(!JSON.stringify(audit[2]).includes('71.8'));
+  });
+  await test('Recado no chat confirmado é enviado e auditado sem o texto', { body: { action: 'send_chat_message', confirmed: true, payload: { patientName: 'Ana', text: 'Recado reservado' } } }, 200, (events, _, acted) => {
+    assert.equal(acted[0][0], 'sendChatMessage');
+    assert.ok(!JSON.stringify(events.find((e) => e[0] === 'audit')[2]).includes('Recado reservado'));
+  });
+  await test('Plano por e-mail recebe só o nome do paciente', { body: { action: 'send_plan_email', confirmed: true, payload: { patientName: 'Ana', to: 'outra@pessoa.com' } } }, 200, (_, __, acted) => {
+    assert.deepEqual(acted[0], ['sendPlanToPatient', 'nutri-A', 'Ana']);
   });
   await test('Recusa da ação chega à Ali com o status certo', { reachesAction: true, assistant: { createEvent: async () => ({ ok: false, status: 409, speech: 'Você já tem um compromisso nesse horário.' }) },
     body: { action: 'create_event', confirmed: true, payload: { title: 'Reunião' } } }, 409, (_, json) => {
