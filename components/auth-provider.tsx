@@ -2,10 +2,17 @@
 
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from '@/lib/firebase';
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { postJson } from '@/lib/api-client';
 
 export type UserRole = 'patient' | 'nutritionist' | null;
+/** Situação do cadastro da nutricionista. Paciente e conta antiga de nutricionista contam como aprovados. */
+export type ApprovalStatus = 'approved' | 'pending' | 'rejected';
+
+function approvalFrom(data: { role?: unknown; approval?: unknown } | undefined): ApprovalStatus {
+  return data?.role === 'nutritionist' && (data.approval === 'pending' || data.approval === 'rejected') ? data.approval : 'approved';
+}
 
 interface AuthContextType {
   role: UserRole;
@@ -14,6 +21,10 @@ interface AuthContextType {
   ready: boolean;
   /** O perfil pede troca da senha temporária. */
   mustChangePassword: boolean;
+  /** Nutricionista recém-cadastrada fica "pending" até o responsável pelo NutriAli aprovar. */
+  approval: ApprovalStatus;
+  /** Envia o e-mail para criar uma senha nova. */
+  sendPasswordReset: (email: string) => Promise<void>;
   login: (role: UserRole, isNewUser?: boolean) => void;
   loginWithGoogle: (preferredRole?: UserRole) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
@@ -46,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [approval, setApproval] = useState<ApprovalStatus>('approved');
   const router = useRouter();
   const pathname = usePathname();
 
@@ -65,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (userSnap.exists()) {
             const data = userSnap.data();
             setMustChangePassword(!!data.mustChangePassword);
+            setApproval(approvalFrom(data));
             if (data.role) {
               setRole(data.role as UserRole);
               localStorage.setItem('mockRole', data.role);
@@ -77,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Sem sessão no Firebase, o papel salvo no navegador não vale mais, nem os dados guardados no aparelho.
         setRole(null);
         setMustChangePassword(false);
+        setApproval('approved');
         clearLocalAppData();
       }
       setReady(true);
@@ -113,16 +127,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.role) {
           assignedRole = data.role as UserRole;
         }
+        setApproval(approvalFrom(data));
       } else {
         isNewUser = true;
+        // Nutricionista nova entra "em análise": a tela seguinte pede o CRN e o responsável aprova.
+        const pending = assignedRole === 'nutritionist';
         await setDoc(userRef, {
           id: googleUser.uid,
           email: googleUser.email,
           displayName: googleUser.displayName,
           photoURL: googleUser.photoURL,
           role: assignedRole,
+          ...(pending ? { approval: 'pending' } : {}),
           createdAt: new Date().toISOString()
         });
+        setApproval(pending ? 'pending' : 'approved');
       }
 
       setRole(assignedRole);
@@ -149,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = userSnap.data();
         const userRole = data.role as UserRole;
         setRole(userRole);
+        setApproval(approvalFrom(data));
         if (userRole) {
           localStorage.setItem('mockRole', userRole);
           if (data.mustChangePassword) {
@@ -171,12 +191,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const userRef = doc(db, 'users', result.user.uid);
       const now = new Date().toISOString();
+      // Nutricionista nova entra "em análise" (as regras do banco só aceitam assim); o responsável aprova depois.
+      const pending = role === 'nutritionist';
       const userData = {
         id: result.user.uid,
         email,
         displayName: name,
         role,
         ...extraData,
+        ...(pending ? { approval: 'pending' } : {}),
         createdAt: now
       };
       
@@ -208,6 +231,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await setDoc(patientRef, removeUndefined(patientData));
       }
 
+      if (pending) {
+        // Registra o pedido e avisa o responsável por e-mail. Se falhar agora, a tela "em análise" tenta de novo.
+        await postJson('/api/nutritionist/approval', {}).catch((notifyError) => console.warn('Aviso de cadastro pendente:', notifyError));
+      }
+      setApproval(pending ? 'pending' : 'approved');
       setRole(role);
       if (role) {
         localStorage.setItem('mockRole', role);
@@ -276,17 +304,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const sendPasswordReset = async (email: string) => {
+    // O e-mail e a página de troca de senha saem em português.
+    auth.languageCode = 'pt-BR';
+    await sendPasswordResetEmail(auth, email);
+  };
+
   const logout = () => {
     signOut(auth).catch((err) => console.error('Sign out error:', err));
     setUser(null);
     setRole(null);
     setMustChangePassword(false);
+    setApproval('approved');
     clearLocalAppData();
     router.push('/login');
   };
 
   return (
-    <AuthContext.Provider value={{ role, user, ready, mustChangePassword, login, loginWithGoogle, loginWithEmail, registerWithEmail, logout, updateUserProfilePhoto }}>
+    <AuthContext.Provider value={{ role, user, ready, mustChangePassword, approval, sendPasswordReset, login, loginWithGoogle, loginWithEmail, registerWithEmail, logout, updateUserProfilePhoto }}>
       {children}
     </AuthContext.Provider>
   );
