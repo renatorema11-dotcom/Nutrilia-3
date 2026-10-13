@@ -168,7 +168,11 @@ export default function ApprovalsPage() {
         </div>
 
         {!user ? (
-          <Card><CardContent className="p-6 text-sm text-slate-700">Entre no aplicativo com a conta do responsável para ver os cadastros.</CardContent></Card>
+          <Card><CardContent className="p-6 text-sm text-slate-700 space-y-3">
+            <p><strong>Para aprovar um cadastro, não precisa entrar aqui:</strong> use o botão &quot;Ver cadastro e aprovar&quot; do e-mail de aviso. Ele abre o cadastro já com as opções de aprovar e recusar.</p>
+            <p>Esta página mostra a lista completa. Para vê-la, entre no aplicativo pelo botão &quot;Entrar com o Google&quot;, usando o mesmo e-mail que recebe os avisos de cadastro, e abra &quot;Aprovações&quot; no menu.</p>
+            <Link href="/login" className="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700">Ir para o login</Link>
+          </CardContent></Card>
         ) : (
           <>
             {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
