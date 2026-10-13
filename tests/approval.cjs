@@ -12,6 +12,8 @@ const context = loadLib(
 );
 context.db = db;
 context.process.env.ADMIN_EMAILS = 'Dono@Exemplo.com, socia@exemplo.com';
+// Segredo de mentira: é com ele que o servidor assina o link do e-mail de aviso.
+context.process.env.AGENT_API_SECRET = 'segredo-de-teste-com-mais-de-32-caracteres';
 const run = (code) => vm.runInContext(code, context);
 const plain = (value) => JSON.parse(JSON.stringify(value));
 context.now = new Date('2026-10-12T15:00:00Z');
@@ -77,8 +79,16 @@ async function check(name, fn) { await fn(); count++; }
     assert.match(mail.subject, /Nutricionista aguardando aprovação: Bia/);
     assert.match(mail.html, /Bia &lt;b&gt;Lima&lt;\/b&gt;/);
     assert.match(mail.html, /CRN-3 12345/);
-    assert.match(mail.html, /app\.nutriali\.cloud\/admin\/aprovacoes/);
+    // O botão do aviso abre o cadastro desta pessoa, com o código assinado depois do "#".
+    const link = /href="https:\/\/app\.nutriali\.cloud\/admin\/aprovar#([A-Za-z0-9_.-]+)"/.exec(mail.html);
+    assert.ok(link, 'o aviso devia trazer o link direto de aprovação');
+    context.token = link[1];
+    assert.deepEqual(plain(run('readApprovalLink(token, now)')), { ok: true, uid: 'n-nova' });
+    assert.match(mail.html, /Ver cadastro e aprovar/);
+    assert.match(mail.html, /usando dono@exemplo\.com/);
+    assert.match(google.sent[1].html, /usando socia@exemplo\.com/);
     assert.match(mail.html, /cnn\.cfn\.org\.br/);
+    assert.equal(saved.approvalLinkSent, true);
     // Abrir a tela de novo (mesmos dados) não manda outro e-mail.
     assert.equal((await submit('n-nova', {})).notified, true);
     assert.equal(google.sent.length, 2);
@@ -127,11 +137,75 @@ async function check(name, fn) { await fn(); count++; }
     context.now = new Date('2026-10-12T15:00:00Z');
   });
 
+  await check('link do aviso: vale para um cadastro só, por 30 dias, e não aceita código mexido', async () => {
+    const read = (token, at = '2026-10-12T15:00:00Z') => { context.token = token; context.at = new Date(at); return plain(run('readApprovalLink(token, at)')); };
+    const token = run("approvalLinkToken('n-nova', now)");
+    assert.match(token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
+    assert.deepEqual(read(token), { ok: true, uid: 'n-nova' });
+    assert.deepEqual(read(token, '2026-11-10T15:00:00Z'), { ok: true, uid: 'n-nova' }); // 29 dias depois
+    assert.deepEqual(read(token, '2026-11-12T15:00:00Z'), { ok: false, reason: 'expired' }); // 31 dias depois
+    // Trocar o cadastro, a validade ou a assinatura invalida o código.
+    const [payload, signature] = token.split('.');
+    const forged = Buffer.from('n-google.' + Math.floor(Date.parse('2027-01-01T00:00:00Z') / 1000)).toString('base64url');
+    for (const bad of [forged + '.' + signature, payload + '.' + signature.slice(0, -1) + (signature.endsWith('A') ? 'B' : 'A'), payload, payload + '.', token + '.x', '', null, 42, 'x'.repeat(500)]) {
+      assert.deepEqual(read(bad), { ok: false, reason: 'invalid' });
+    }
+    // O código de um cadastro não serve para outro.
+    assert.deepEqual(read(run("approvalLinkToken('n-google', now)")), { ok: true, uid: 'n-google' });
+    // Sem o segredo no servidor não há link (o aviso sai apontando para a lista) e nenhum código é aceito.
+    const secret = context.process.env.AGENT_API_SECRET;
+    context.process.env.AGENT_API_SECRET = 'curto';
+    assert.equal(run("approvalLinkToken('n-nova', now)"), null);
+    assert.deepEqual(read(token), { ok: false, reason: 'invalid' });
+    context.process.env.AGENT_API_SECRET = secret;
+  });
+
+  await check('aviso antigo, enviado antes do link direto: a tela "em análise" faz sair um novo, já com o botão', async () => {
+    store.set('users/n-velha', { role: 'nutritionist', approval: 'pending', email: 'velha@exemplo.com', displayName: 'Vera', crn: 'CRN-6 4321', specialty: 'Clínica', phone: '81 90000-0000',
+      approvalRequestedAt: '2026-10-12T14:50:00.000Z', approvalNotifiedAt: '2026-10-12T14:50:00.000Z', approvalNotifyTriedAt: '2026-10-12T14:50:00.000Z' });
+    const before = google.sent.length;
+    assert.equal((await submit('n-velha', {})).notified, true);
+    assert.equal(google.sent.length, before + 2);
+    assert.match(google.sent[before].html, /admin\/aprovar#/);
+    assert.equal(store.get('users/n-velha').approvalLinkSent, true);
+    assert.equal((await submit('n-velha', {})).notified, true);
+    assert.equal(google.sent.length, before + 2); // não repete
+  });
+
+  await check('aprovar pelo link: mostra o cadastro e decide sem login; link inválido ou vencido não faz nada', async () => {
+    const view = async (token, at = '2026-10-12T15:00:00Z') => { context.token = token; context.at = new Date(at); return plain(await run('approvalByLink(db, token, at)')); };
+    const byLink = async (token, decision, at = '2026-10-12T15:00:00Z') => { context.token = token; context.decision = decision; context.at = new Date(at); return plain(await run('decideByLink(db, token, decision, at)')); };
+    const token = run("approvalLinkToken('n-velha', now)");
+    const seen = await view(token);
+    assert.equal(seen.ok, true);
+    assert.deepEqual(seen.record, { uid: 'n-velha', name: 'Vera', email: 'velha@exemplo.com', crn: 'CRN-6 4321', specialty: 'Clínica', phone: '81 90000-0000', approval: 'pending', requestedAt: '2026-10-12T14:50:00.000Z', decidedAt: '' });
+    assert.equal((await view('codigo.falso')).status, 404);
+    assert.equal((await view(token, '2026-12-01T00:00:00Z')).status, 410);
+    assert.equal((await byLink('codigo.falso', 'approve')).status, 404);
+    assert.equal((await byLink(token, 'approve', '2026-12-01T00:00:00Z')).status, 410);
+    assert.equal((await byLink(token, 'apagar')).status, 422);
+    assert.equal(store.get('users/n-velha').approval, 'pending');
+    const before = google.sent.length;
+    assert.deepEqual(await byLink(token, 'approve'), { ok: true, approval: 'approved', emailed: true });
+    const saved = store.get('users/n-velha');
+    assert.equal(saved.approval, 'approved');
+    assert.equal(saved.approvalDecidedBy, 'dono@exemplo.com (link do e-mail)');
+    assert.equal(google.sent[before].to, 'velha@exemplo.com');
+    assert.match(google.sent[before].subject, /foi aprovado/);
+    // O mesmo link serve para voltar atrás enquanto valer.
+    assert.equal((await byLink(token, 'reject')).approval, 'rejected');
+    assert.equal((await view(token)).record.approval, 'rejected');
+    // Link de conta que não passou pela análise (antiga) não abre nada.
+    assert.equal((await view(run("approvalLinkToken('n-antiga', now)"))).status, 404);
+    assert.equal((await byLink(run("approvalLinkToken('n-antiga', now)"), 'reject')).status, 404);
+  });
+
   const decide = async (uid, decision) => { context.uid = uid; context.decision = decision; return plain(await run("decideApproval(db, 'Dono@Exemplo.com', uid, decision, now)")); };
 
   await check('lista: quem espera vem primeiro; contas antigas não aparecem', async () => {
     const list = plain(await run('listApprovals(db)'));
-    assert.deepEqual(list.map((item) => item.uid), ['n-nova', 'n-google']);
+    assert.deepEqual(list.map((item) => item.uid), ['n-nova', 'n-google', 'n-velha']);
+    assert.deepEqual(list.map((item) => item.approval), ['pending', 'pending', 'rejected']);
     assert.deepEqual(list[0], { uid: 'n-nova', name: 'Bia <b>Lima</b>', email: 'bia@exemplo.com', crn: 'CRN-3 54321', specialty: 'Nutrição Esportiva', phone: '(11) 98888-7777', approval: 'pending', requestedAt: '2026-10-12T15:00:00.000Z', decidedAt: '' });
   });
 
@@ -155,7 +229,7 @@ async function check(name, fn) { await fn(); count++; }
     // Uma recusa pode ser revista depois.
     assert.equal((await decide('n-google', 'approve')).approval, 'approved');
     const list = plain(await run('listApprovals(db)'));
-    assert.equal(list.every((item) => item.approval === 'approved'), true);
+    assert.deepEqual(list.map((item) => item.uid + ':' + item.approval).sort(), ['n-google:approved', 'n-nova:approved', 'n-velha:rejected']);
   });
 
   await check('decisão: só vale para cadastro que passou pela análise, com pedido bem formado', async () => {
