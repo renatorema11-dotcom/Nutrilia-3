@@ -1,4 +1,5 @@
 import { getAdminDb, json, verifyCaller } from '@/lib/firebase-admin';
+import { approvalOf } from '@/lib/nutritionist-approval';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,8 @@ export async function GET(req: Request) {
   if (!caller) return json({ error: 'Entre novamente no aplicativo.' }, 401);
   try {
     const snap = await getAdminDb().collection('users').where('role', '==', 'nutritionist').get();
-    const nutritionists = snap.docs.map((doc) => {
+    // Cadastro em análise ou recusado não aparece para os pacientes.
+    const nutritionists = snap.docs.filter((doc) => approvalOf(doc.data()) === 'approved').map((doc) => {
       const d = doc.data() || {};
       // Foto grande demais fica de fora inteira (cortar uma imagem embutida a estragaria).
       const rawPhoto = typeof d.photoURL === 'string' ? d.photoURL.trim() : '';
