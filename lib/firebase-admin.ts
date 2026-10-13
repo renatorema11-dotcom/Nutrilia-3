@@ -58,6 +58,20 @@ export async function verifyCaller(req: Request): Promise<Caller | null> {
   return { uid: account.uid, role };
 }
 
+/** Último acesso de cada pessoa ao app, pelo login. Quem nunca entrou volta como null; quem não tem login fica de fora. */
+export async function lastSeenLookup(uids: string[]): Promise<Map<string, Date | null>> {
+  const auth = getAuth(getAdminApp());
+  const seen = new Map<string, Date | null>();
+  for (let i = 0; i < uids.length; i += 100) {
+    const result = await auth.getUsers(uids.slice(i, i + 100).map((uid) => ({ uid })));
+    for (const user of result.users) {
+      const at = user.metadata.lastRefreshTime || user.metadata.lastSignInTime;
+      seen.set(user.uid, at ? new Date(at) : null);
+    }
+  }
+  return seen;
+}
+
 /** Confere o segredo do n8n (cabeçalho x-webhook-secret) nas rotas chamadas de servidor para servidor. */
 export function hasGatewaySecret(req: Request): boolean {
   const expected = process.env.AGENT_API_SECRET;

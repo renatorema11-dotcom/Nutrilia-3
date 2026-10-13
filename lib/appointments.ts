@@ -127,6 +127,75 @@ export async function cancelNextByNutritionist(db: Firestore, nutritionistId: st
 }
 
 /** Pedido por voz: cancela a próxima consulta do paciente. */
+/**
+ * A nutricionista troca o horário da próxima consulta de um paciente dela. Ela escolhe o horário que quiser
+ * (não precisa caber na grade de atendimento); se bater com outro compromisso, a Ali avisa e só segue com force.
+ * A consulta continua com a mesma duração, os lembretes recomeçam e o paciente é avisado.
+ */
+export async function rescheduleNextByNutritionist(db: Firestore, nutritionistId: string, patientUid: string, start: Date, force: boolean, now = new Date()): Promise<ActionResult> {
+  const current = (await upcomingForPatient(db, patientUid, now)).find((a) => a.nutritionistId === nutritionistId);
+  if (!current) return { ok: false, status: 409, speech: 'Não encontrei consulta marcada pela Ali com esse paciente. Quer que eu marque uma nova?' };
+  const access = await getAccess(db, nutritionistId);
+  if (!access.ok) {
+    return access.reason === 'unavailable'
+      ? { ok: false, status: 502, speech: 'Não consegui falar com o Google agora, então a consulta continua no horário de antes. Tente de novo em instantes.' }
+      : { ok: false, status: 409, speech: 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.' };
+  }
+  const settings = await loadSettings(db, nutritionistId);
+  const tz = settings.timezone;
+  const previous: Interval = { start: new Date(current.startAt), end: new Date(current.endAt) };
+  if (start.getTime() === previous.start.getTime()) return { ok: false, status: 409, speech: `A consulta de ${current.patientName} já está marcada para ${current.label}.` };
+  const end = new Date(start.getTime() + (previous.end.getTime() - previous.start.getTime()));
+
+  if (!force) {
+    let busy: Interval[];
+    try { busy = await busyIntervals(access.token, { start: new Date(start.getTime() - 3_600_000), end: new Date(end.getTime() + 3_600_000) }, tz); }
+    catch { return { ok: false, status: 502, speech: 'Não consegui ver a sua agenda agora. Tente de novo em instantes.' }; }
+    // O horário de antes não conta como ocupado: é a própria consulta que está mudando de lugar.
+    if (!isFree(start, end, withoutInterval(busy, previous), 0)) {
+      return { ok: false, status: 409, speech: 'Você já tem um compromisso nesse horário. Quer remarcar mesmo assim?' };
+    }
+  }
+
+  const res = await googleRequest(access.token, 'PATCH', `${eventUrl(current)}?${notifyGuests(current)}`, {
+    start: { dateTime: toOffsetIso(start, tz), timeZone: tz },
+    end: { dateTime: toOffsetIso(end, tz), timeZone: tz },
+  }).catch(() => null);
+  if (res && (res.status === 404 || res.status === 410)) {
+    await markCancelled(db, current, now);
+    return { ok: false, status: 409, speech: 'Essa consulta não está mais na sua agenda do Google. Quer que eu marque uma nova?' };
+  }
+  if (!res || !res.ok) {
+    return { ok: false, status: 502, speech: 'Não consegui remarcar na agenda agora. A consulta continua no horário de antes. Tente de novo em instantes.' };
+  }
+  const updated = await applyNewTime(db, current, start, end, tz, now);
+
+  let patientMailed = false;
+  if (updated.patientEmail) {
+    try {
+      await sendMail(access.token, {
+        fromName: settings.displayName || 'NutriAli', fromEmail: access.email, to: updated.patientEmail,
+        subject: `Consulta remarcada: ${updated.label}`,
+        html: emailLayout('Sua consulta foi remarcada', [
+          p(`Olá, ${escapeHtml(updated.patientName)}!`),
+          p(`${escapeHtml(settings.displayName || 'Sua nutricionista')} remarcou a sua consulta para <strong>${escapeHtml(updated.label)}</strong>. O horário de antes era ${escapeHtml(current.label)}.`),
+          p(whereLine(updated, settings)),
+          p('Se esse horário não servir, peça outro para a Ali no aplicativo.'),
+        ].join(''), 'Consulta remarcada pela Ali, a assistente do NutriAli.'),
+      });
+      patientMailed = true;
+    } catch {
+      console.error('Ali: falha ao enviar a remarcação ao paciente.');
+    }
+  }
+  return {
+    ok: true,
+    speech: `Pronto! Remarquei a consulta de ${updated.patientName} para ${updated.label}. `
+      + (patientMailed ? 'O paciente foi avisado por e-mail.' : updated.patientEmail ? 'O convite atualizado chega pela agenda do Google.' : 'O paciente não tem e-mail cadastrado: avise o novo horário por outro meio.'),
+    appointment: { patientName: updated.patientName, label: updated.label, start: updated.startLocal, mode: updated.mode },
+  };
+}
+
 export async function cancelNextAppointment(db: Firestore, patientUid: string, now = new Date()): Promise<ActionResult> {
   const [next] = await upcomingForPatient(db, patientUid, now);
   if (!next) return { ok: false, status: 409, speech: `${NO_APPOINTMENT} Quer que eu veja os horários livres para marcar uma?` };

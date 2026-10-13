@@ -5,9 +5,11 @@ import { cleanText, describeAttendance, describeClinic, joinPt, matchByName, san
 import type { AliContact } from './ali-settings';
 import { describeDates, isFree, localDateKey, parseLocalDateTime, slotLabel, toOffsetIso } from './agenda';
 import type { Interval } from './agenda';
-import { cancelNextByNutritionist } from './appointments';
-import { CALENDAR_EVENTS_URL, busyIntervals, connectionStatus, createAppointment, emailLayout, escapeHtml, getAccess, googleRequest, isValidEmail, loadSettings, newNonce, p, sendMail } from './google-workspace';
+import { cancelNextByNutritionist, rescheduleNextByNutritionist } from './appointments';
+import { CALENDAR_EVENTS_URL, busyIntervals, connectionStatus, createAppointment, emailLayout, escapeHtml, getAccess, googleRequest, isValidEmail, loadSettings, newNonce, p, sendMail, sendPlanEmail } from './google-workspace';
 import type { ActionResult } from './google-workspace';
+import { collectWeek } from './weekly-report';
+import type { LastSeenLookup } from './weekly-report';
 
 const NOT_CONNECTED = 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.';
 const DAILY_EMAIL_LIMIT = 40;
@@ -192,6 +194,172 @@ export async function cancelConsultation(db: Firestore, nutritionistId: string, 
   const picked = pickOne(await loadPatients(db, nutritionistId), patientName, 'do paciente');
   if (!picked.ok) return picked.result;
   return cancelNextByNutritionist(db, nutritionistId, picked.value.uid, now);
+}
+
+export interface RescheduleInput { patientName?: unknown; date?: unknown; time?: unknown; force?: unknown }
+
+/** Troca o horário da próxima consulta de um paciente dela, sem precisar cancelar e marcar de novo. */
+export async function rescheduleConsultation(db: Firestore, nutritionistId: string, input: RescheduleInput, now = new Date()): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), input.patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const settings = await loadSettings(db, nutritionistId);
+  const timing = readTiming(input.date, input.time, settings.durationMinutes, settings.timezone, now);
+  if (!timing.ok) return timing.result;
+  return rescheduleNextByNutritionist(db, nutritionistId, picked.value.uid, timing.start, input.force === true, now);
+}
+
+// ───────────── Prontuário, chat e plano ─────────────
+
+/** Número ditado ("72,4" ou 72.4), arredondado a uma casa. NaN quando não é número. */
+function spokenNumber(value: unknown): number {
+  const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value.trim().replace(',', '.')) : NaN;
+  return Math.round(number * 10) / 10;
+}
+
+const spokenKilos = (value: number) => `${String(value).replace('.', ',')} ${value === 1 ? 'quilo' : 'quilos'}`;
+
+export interface MeasurementInput { patientName?: unknown; weight?: unknown; bodyFat?: unknown }
+
+/** Peso (e percentual de gordura, se ela disser) de um paciente dela, com a data de hoje, direto no prontuário. */
+export async function logMeasurement(db: Firestore, nutritionistId: string, input: MeasurementInput, now = new Date()): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), input.patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  const weight = spokenNumber(input.weight);
+  if (!(weight >= 20 && weight <= 500)) return { ok: false, status: 422, speech: 'Qual é o peso, em quilos? Por exemplo, setenta e dois vírgula quatro.' };
+  const hasFat = input.bodyFat !== undefined && input.bodyFat !== null && input.bodyFat !== '';
+  const bodyFat = hasFat ? spokenNumber(input.bodyFat) : null;
+  if (bodyFat !== null && !(bodyFat > 0 && bodyFat < 100)) return { ok: false, status: 422, speech: 'O percentual de gordura precisa ficar entre zero e cem.' };
+
+  const today = localDateKey(now, (await loadSettings(db, nutritionistId)).timezone);
+  const ref = db.collection('patients').doc(patient.uid);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() || {} : {};
+  const measurements: Record<string, unknown>[] = (Array.isArray(data.measurements) ? data.measurements : []).filter((m: unknown) => m && typeof m === 'object');
+  const entry = {
+    date: today, weight,
+    ...(bodyFat !== null ? { bodyFat } : {}),
+    ...(typeof data.height === 'number' ? { height: data.height } : {}),
+    source: 'nutritionist',
+  };
+  const last = measurements[measurements.length - 1];
+  // Corrigir o valor no mesmo dia troca a medição de hoje em vez de empilhar outra.
+  if (last && last.date === today && last.source === 'nutritionist') measurements[measurements.length - 1] = entry;
+  else measurements.push(entry);
+  await ref.set({ weight, ...(bodyFat !== null ? { bodyFat } : {}), measurements }, { merge: true });
+
+  const target = patient.targetWeight;
+  const gap = target === null ? null : Math.round(Math.abs(weight - target) * 10) / 10;
+  return {
+    ok: true,
+    speech: `Anotei ${spokenKilos(weight)}${bodyFat !== null ? ` e ${String(bodyFat).replace('.', ',')} por cento de gordura` : ''} no prontuário de ${patient.name}, com a data de hoje.`
+      + (gap === null ? '' : gap === 0 ? ` A meta de ${spokenKilos(target as number)} foi atingida.` : ` A diferença para a meta de ${spokenKilos(target as number)} é de ${spokenKilos(gap)}.`),
+    measurement: { patientName: patient.name, date: today, weight, bodyFat },
+  };
+}
+
+const CHAT_MESSAGE_MAX = 1000;
+
+export interface ChatMessageInput { patientName?: unknown; text?: unknown }
+
+/** Recado no chat direto com um paciente dela: aparece para ele na aba "Nutricionista" do Chat. */
+export async function sendChatMessage(db: Firestore, nutritionistId: string, input: ChatMessageInput, now = new Date()): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), input.patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  const text = cleanText(input.text, CHAT_MESSAGE_MAX + 1);
+  if (text.length < 2) return { ok: false, status: 422, speech: 'Qual é o recado?' };
+  if (text.length > CHAT_MESSAGE_MAX) return { ok: false, status: 422, speech: 'O recado ficou longo demais para o chat. Resuma em poucas frases ou mande por e-mail.' };
+
+  const settings = await loadSettings(db, nutritionistId);
+  // Mesmo endereço e mesmo formato das mensagens que ela escreve na tela "Chat com Pacientes".
+  const chat = db.collection('chats').doc(`${patient.uid}_${nutritionistId}`);
+  await chat.set({ updatedAt: now }, { merge: true });
+  await chat.collection('messages').add({
+    senderId: nutritionistId, senderName: settings.displayName || 'Nutricionista', senderRole: 'nutritionist', text, createdAt: now.toISOString(),
+  });
+  return { ok: true, speech: `Recado enviado para ${patient.name} no chat do aplicativo.`, message: { to: patient.name } };
+}
+
+/** Envia o plano alimentar aprovado de um paciente dela para o e-mail dele, pelo Gmail dela. */
+export async function sendPlanToPatient(db: Firestore, nutritionistId: string, patientName: unknown): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  if (!patient.email) return { ok: false, status: 422, speech: `${patient.name} não tem e-mail cadastrado.` };
+  if (patient.plan !== 'approved') {
+    return { ok: false, status: 409, speech: patient.plan === 'draft'
+      ? `O plano de ${patient.name} ainda está em rascunho. Aprove no aplicativo antes de enviar.`
+      : `${patient.name} ainda não tem plano alimentar.` };
+  }
+  const access = await getAccess(db, nutritionistId);
+  if (!access.ok) return accessProblem(access.reason);
+
+  const snap = await db.collection('patients').doc(patient.uid).get();
+  const stored = snap.exists ? snap.data()?.currentPlan?.days : [];
+  const days = (Array.isArray(stored) ? stored : []).slice(0, 7).map((day: Record<string, unknown>) => ({
+    name: String(day?.name || '').slice(0, 100),
+    meals: (Array.isArray(day?.meals) ? day.meals : []).slice(0, 10).map((meal: Record<string, unknown>) => ({
+      name: String(meal?.name || '').slice(0, 100), time: String(meal?.time || '').slice(0, 30),
+      items: (Array.isArray(meal?.items) ? meal.items : []).slice(0, 12).map((item: unknown) => String(item).slice(0, 500)),
+    })),
+  })).filter((day) => day.meals.length);
+  if (!days.length) return { ok: false, status: 409, speech: `O plano de ${patient.name} está sem refeições. Confira no aplicativo antes de enviar.` };
+
+  const result = await sendPlanEmail(db, { nutritionistId, patientUid: patient.uid, patientName: patient.name, patientEmail: patient.email, days });
+  if (!result.ok) return { ok: false, status: 502, speech: 'Não consegui enviar o e-mail agora. Nada foi enviado. Tente de novo em instantes.' };
+  return { ok: true, speech: `O plano alimentar de ${patient.name} foi enviado para o e-mail cadastrado.`, email: { to: patient.name, subject: 'Seu plano alimentar' } };
+}
+
+// ───────────── Resumo da semana ─────────────
+
+const SUMMARY_NAMES = 5;
+/** A partir de quantos dias sem abrir o app o paciente conta como sumido (o mesmo do resumo por e-mail). */
+const SUMMARY_AWAY_DAYS = 7;
+
+/** Lista curta para falar: os primeiros nomes e quantos ficaram de fora. */
+function spokenNames(names: string[]): string {
+  const first = names.slice(0, SUMMARY_NAMES);
+  return joinPt(first) + (names.length > first.length ? `, e mais ${names.length - first.length}` : '');
+}
+
+/** Os mesmos números do resumo semanal por e-mail, em poucas frases para a Ali dizer. */
+export async function weekSummary(db: Firestore, nutritionistId: string, lastSeen: LastSeenLookup, now = new Date()): Promise<ActionResult> {
+  const tz = (await loadSettings(db, nutritionistId)).timezone;
+  const data = await collectWeek(db, nutritionistId, lastSeen, now, tz);
+  if (!data.patients.length) return { ok: true, speech: 'Você ainda não tem pacientes vinculados no NutriAli.', summary: { patients: 0 } };
+
+  const active = data.patients.filter((patient) => patient.meals > 0 || patient.weighed);
+  const away = data.patients
+    .filter((patient) => patient.neverSeen || (patient.awayDays !== null && patient.awayDays >= SUMMARY_AWAY_DAYS))
+    .sort((a, b) => (b.awayDays ?? Infinity) - (a.awayDays ?? Infinity));
+  const drafts = data.patients.filter((patient) => patient.plan === 'draft');
+  const noPlan = data.patients.filter((patient) => patient.plan === 'none');
+  const dayOf = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'long', day: 'numeric' });
+
+  const parts = [`Você tem ${data.patients.length} ${data.patients.length === 1 ? 'paciente' : 'pacientes'}.`];
+  if (data.appointments.length) {
+    const next = data.appointments[0];
+    parts.push(`Nos próximos sete dias há ${data.appointments.length} ${data.appointments.length === 1 ? 'consulta marcada' : 'consultas marcadas'}; a primeira é ${dayOf.format(new Date(`${next.date}T12:00:00Z`))}${next.time ? `, às ${next.time}` : ''}, com ${next.patientName}.`);
+  } else parts.push('Não há consultas marcadas para os próximos sete dias.');
+  parts.push(active.length
+    ? `Nos últimos sete dias, ${active.length === 1 ? 'registrou refeição ou peso' : 'registraram refeição ou peso'}: ${spokenNames(active.map((patient) => patient.name))}.`
+    : 'Nos últimos sete dias ninguém registrou refeição nem peso.');
+  if (data.seenKnown) {
+    parts.push(away.length
+      ? `Sem abrir o aplicativo há uma semana ou mais: ${spokenNames(away.map((patient) => patient.name))}.`
+      : 'Todos abriram o aplicativo nos últimos sete dias.');
+  }
+  if (drafts.length) parts.push(`Planos esperando a sua aprovação: ${spokenNames(drafts.map((patient) => patient.name))}.`);
+  if (noPlan.length) parts.push(`Ainda sem plano: ${spokenNames(noPlan.map((patient) => patient.name))}.`);
+  return {
+    ok: true,
+    speech: parts.join(' '),
+    summary: {
+      patients: data.patients.length, appointments: data.appointments.length, active: active.map((patient) => patient.name),
+      away: data.seenKnown ? away.map((patient) => patient.name) : null, drafts: drafts.map((patient) => patient.name), noPlan: noPlan.map((patient) => patient.name),
+    },
+  };
 }
 
 interface Person { name: string; email: string | null }
