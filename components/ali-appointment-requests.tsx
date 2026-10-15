@@ -5,7 +5,16 @@ import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/f
 import { db } from '@/lib/firebase';
 import { useAuth } from './auth-provider';
 
-type AppointmentRequest = { id: string; patientName: string; preferredDate: string; notes: string; status: string };
+type AppointmentRequest = { id: string; patientName: string; preferredDate: string; notes: string; status: string; appointmentLabel?: string };
+
+// "confirmed": a nutricionista marcou a consulta; "declined": ela encerrou o pedido sem marcar (pela Ali).
+function statusLabel(request: AppointmentRequest): string {
+  if (request.status === 'pending') return 'Aguardando confirmação';
+  if (request.status === 'confirmed') return request.appointmentLabel ? `Consulta marcada para ${request.appointmentLabel}` : 'Confirmada';
+  if (request.status === 'declined') return 'Não pôde ser atendido';
+  if (request.status === 'cancelled') return 'Cancelada';
+  return 'Em análise';
+}
 
 export function AliAppointmentRequests({ isNutritionist }: { isNutritionist: boolean }) {
   const { user } = useAuth();
@@ -34,7 +43,7 @@ function RequestsForUser({ uid, isNutritionist }: { uid: string; isNutritionist:
         {isNutritionist && <p className="font-semibold">{request.patientName}</p>}
         <p>Preferência: {request.preferredDate}</p>
         {request.notes && <p className="whitespace-pre-wrap text-slate-600">{request.notes}</p>}
-        <p className="mt-1 text-xs font-medium text-amber-800">{request.status === 'pending' ? 'Aguardando confirmação' : request.status === 'confirmed' ? 'Confirmada' : request.status === 'cancelled' ? 'Cancelada' : 'Em análise'}</p>
+        <p className="mt-1 text-xs font-medium text-amber-800">{statusLabel(request)}</p>
       </li>)}</ul>}
   </section>;
 }
