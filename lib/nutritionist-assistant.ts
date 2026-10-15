@@ -41,6 +41,8 @@ interface PatientRow {
   targetWeight: number | null;
   nextAppointment: string;
   plan: 'approved' | 'draft' | 'none';
+  /** Rascunho novo (feito pela Ali) esperando aprovação enquanto o plano aprovado continua valendo. */
+  pendingDraft: boolean;
 }
 
 async function loadPatients(db: Firestore, nutritionistId: string): Promise<PatientRow[]> {
@@ -58,6 +60,7 @@ async function loadPatients(db: Firestore, nutritionistId: string): Promise<Pati
         targetWeight: typeof d.targetWeight === 'number' ? d.targetWeight : null,
         nextAppointment: typeof d.nextAppointment === 'string' ? d.nextAppointment : '',
         plan: status === 'approved' ? 'approved' as const : status ? 'draft' as const : 'none' as const,
+        pendingDraft: !!d.pendingPlan && typeof d.pendingPlan === 'object',
       };
     })
     .filter((patient) => patient.name)
@@ -95,7 +98,7 @@ export async function patientSummary(db: Firestore, nutritionistId: string, name
   const picked = pickOne(await loadPatients(db, nutritionistId), name, 'do paciente');
   if (!picked.ok) return picked.result;
   const patient = picked.value;
-  const plan = patient.plan === 'approved' ? 'plano aprovado' : patient.plan === 'draft' ? 'plano em rascunho, esperando a sua aprovação' : 'ainda sem plano';
+  const plan = patient.plan === 'approved' ? (patient.pendingDraft ? 'plano aprovado, com um rascunho novo esperando a sua aprovação' : 'plano aprovado') : patient.plan === 'draft' ? 'plano em rascunho, esperando a sua aprovação' : 'ainda sem plano';
   return {
     ok: true,
     speech: `${patient.name}: objetivo ${patient.objective || 'não informado'}; `
@@ -612,7 +615,7 @@ export async function consultationBrief(db: Firestore, nutritionistId: string, p
       parts.push(awayDays === 0 ? 'Abriu o aplicativo nas últimas 24 horas.' : awayDays === 1 ? 'Abriu o aplicativo ontem.' : `Está há ${awayDays} dias sem abrir o aplicativo.`);
     }
   }
-  parts.push(patient.plan === 'approved' ? 'Plano alimentar aprovado.' : patient.plan === 'draft' ? 'Plano em rascunho, esperando a sua aprovação.' : 'Ainda sem plano alimentar.');
+  parts.push(patient.plan === 'approved' ? (patient.pendingDraft ? 'Plano alimentar aprovado, com um rascunho novo esperando a sua aprovação.' : 'Plano alimentar aprovado.') : patient.plan === 'draft' ? 'Plano em rascunho, esperando a sua aprovação.' : 'Ainda sem plano alimentar.');
   const openRequest = requests.find((request) => request.patientUid === patient.uid) || null;
   if (openRequest) parts.push(`Tem um pedido de consulta aberto, ${preference(openRequest.preferredDate)}.`);
   const lastNote = notes[0] || null;
@@ -680,7 +683,7 @@ export async function attentionList(db: Firestore, nutritionistId: string, lastS
       }
     }
     const status = d.currentPlan?.status;
-    if (status && status !== 'approved') reasons.push({ weight: 2, text: 'o plano está esperando a sua aprovação' });
+    if ((status && status !== 'approved') || (d.pendingPlan && typeof d.pendingPlan === 'object')) reasons.push({ weight: 2, text: 'o plano está esperando a sua aprovação' });
     else if (!status) reasons.push({ weight: 1, text: 'ainda não tem plano alimentar' });
     reasons.sort((a, b) => b.weight - a.weight);
     return { name: String(d.name).trim(), reasons, score: reasons.reduce((sum, reason) => sum + reason.weight, 0) };
@@ -695,6 +698,153 @@ export async function attentionList(db: Firestore, nutritionistId: string, lastS
     speech: `${flagged.length === 1 ? 'Um paciente precisa' : `${flagged.length} pacientes precisam`} de atenção. ${spoken.join(' ')}`
       + (rest.length ? ` Também: ${joinPt(rest.slice(0, 5).map((row) => row.name))}${rest.length > 5 ? ` e mais ${rest.length - 5}` : ''}.` : ''),
     attention: flagged.slice(0, 20).map((row) => ({ name: row.name, reasons: row.reasons.map((reason) => reason.text) })),
+  };
+}
+
+// ───────────── Fase 3: rascunho de plano por voz ─────────────
+
+interface DraftMeal { time: string; name: string; items: string[] }
+interface DraftDay { name: string; meals: DraftMeal[] }
+
+/** Gera o rascunho com a IA (na rota: lib/plan-draft.ts). Recebe os dados do paciente sem o nome e as orientações. */
+export type PlanGenerator = (patientContext: string, instructions: string) => Promise<{ days: DraftDay[] }>;
+/** Roda uma tarefa depois que a resposta já foi enviada (na rota: after, do Next). */
+export type RunLater = (task: () => Promise<void>) => void;
+
+/** Depois disso, um rascunho que ainda aparece "em andamento" conta como falha (a IA desiste em 45 segundos). */
+const PLAN_JOB_STALE_MS = 3 * 60_000;
+const PLAN_INSTRUCTIONS_MAX = 1000;
+
+interface PlanJob { id: string; status: 'running' | 'done' | 'failed'; startedAt: string; finishedAt?: string; reason?: string }
+
+const planJobOf = (value: unknown): PlanJob | null => {
+  const job = value && typeof value === 'object' ? value as Record<string, unknown> : null;
+  return job && typeof job.id === 'string' && typeof job.startedAt === 'string' && (job.status === 'running' || job.status === 'done' || job.status === 'failed')
+    ? job as unknown as PlanJob : null;
+};
+
+const jobRunning = (job: PlanJob | null, now: Date) => !!job && job.status === 'running' && now.getTime() - Date.parse(job.startedAt) < PLAN_JOB_STALE_MS;
+
+/** O rascunho esperando aprovação: o novo ao lado de um plano aprovado (pendingPlan) ou o plano ainda não aprovado. */
+function draftOf(data: Record<string, unknown>): { days: DraftDay[]; source: string; createdDate: string } | null {
+  const pending = data.pendingPlan && typeof data.pendingPlan === 'object' ? data.pendingPlan as Record<string, unknown> : null;
+  const current = data.currentPlan && typeof data.currentPlan === 'object' ? data.currentPlan as Record<string, unknown> : null;
+  const plan = pending || (current && current.status !== 'approved' ? current : null);
+  if (!plan) return null;
+  const days = (Array.isArray(plan.days) ? plan.days : []).filter((day: Record<string, unknown>) => day && Array.isArray(day.meals)).map((day: Record<string, unknown>) => ({
+    name: cleanText(day.name, 80) || 'Dia',
+    meals: (day.meals as Record<string, unknown>[]).filter((meal) => meal && typeof meal === 'object').map((meal) => ({
+      time: cleanText(meal.time, 10), name: cleanText(meal.name, 80) || 'Refeição',
+      items: (Array.isArray(meal.items) ? meal.items : []).map((item: unknown) => cleanText(item, 200)).filter(Boolean),
+    })),
+  }));
+  return { days, source: plan.source === 'ali' ? 'ali' : 'app', createdDate: typeof plan.createdDate === 'string' ? plan.createdDate : '' };
+}
+
+export interface PlanDraftInput { patientName?: unknown; text?: unknown; force?: unknown }
+
+/**
+ * Começa o rascunho do plano alimentar de um paciente dela com a IA, com as orientações que ela ditar.
+ * A resposta sai na hora (a voz não espera a IA); o rascunho fica pronto em segundo plano, em cerca de um minuto.
+ * Paciente sem plano (ou com rascunho): o rascunho vai para currentPlan, como na tela. Paciente com plano aprovado:
+ * vai para pendingPlan, e o plano aprovado continua valendo até ela aprovar o novo no app.
+ */
+export async function createPlanDraft(db: Firestore, nutritionistId: string, input: PlanDraftInput, generate: PlanGenerator, runLater: RunLater, now = new Date()): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), input.patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  const instructions = cleanText(input.text, PLAN_INSTRUCTIONS_MAX + 1);
+  if (instructions.length > PLAN_INSTRUCTIONS_MAX) return { ok: false, status: 422, speech: 'As orientações ficaram longas demais. Resuma nos pontos principais, como calorias, restrições e número de refeições.' };
+
+  const ref = db.collection('patients').doc(patient.uid);
+  const snap = await ref.get();
+  const data = snap.exists ? snap.data() || {} : {};
+  if (jobRunning(planJobOf(data.planDraftJob), now)) return { ok: false, status: 409, speech: `Já estou montando um rascunho para ${patient.name}. Em instantes ele fica pronto.` };
+  if (draftOf(data) && input.force !== true) {
+    return { ok: false, status: 409, speech: `${patient.name} já tem um rascunho de plano esperando a sua aprovação. Quer que eu faça um novo no lugar dele?` };
+  }
+
+  // O nome do paciente não vai para a IA: ela só precisa dos números e do objetivo.
+  const measures = measurementsOf(data);
+  const last = measures.length ? measures[measures.length - 1] : null;
+  const heights = (Array.isArray(data.measurements) ? data.measurements : []).map((m: Record<string, unknown>) => m?.height).filter((h: unknown) => typeof h === 'number');
+  const context = JSON.stringify({
+    idade: typeof data.age === 'number' ? data.age : null,
+    objetivo: patient.objective || null,
+    pesoAtual: last ? last.weight : patient.weight,
+    altura: heights.length ? heights[heights.length - 1] : typeof data.height === 'number' ? data.height : null,
+    pesoMeta: patient.targetWeight,
+  });
+  const tz = (await loadSettings(db, nutritionistId)).timezone;
+  const job: PlanJob = { id: newNonce(), status: 'running', startedAt: now.toISOString() };
+  await ref.update({ planDraftJob: job });
+  const replacesApproved = patient.plan === 'approved';
+
+  runLater(async () => {
+    let days: DraftDay[];
+    try {
+      days = (await generate(context, instructions)).days;
+    } catch (error) {
+      // A mensagem da IA já é a que pode ser dita (indisponível, limite de uso...); outros erros ficam genéricos.
+      const reason = error && typeof (error as { status?: unknown }).status === 'number' ? cleanText((error as Error).message, 200) : '';
+      await ref.update({ planDraftJob: { ...job, status: 'failed', finishedAt: new Date().toISOString(), ...(reason ? { reason } : {}) } }).catch(() => {});
+      return;
+    }
+    const fresh = await ref.get();
+    const current = fresh.exists ? fresh.data() || {} : {};
+    // Outro pedido começou depois deste: o rascunho mais novo é o que vale.
+    if (planJobOf(current.planDraftJob)?.id !== job.id) return;
+    const finished = new Date();
+    const draft = { id: `plan_${finished.getTime()}`, status: 'draft', createdDate: localDateKey(finished, tz), days, source: 'ali', ...(instructions ? { instructions } : {}) };
+    const approved = current.currentPlan && typeof current.currentPlan === 'object' && current.currentPlan.status === 'approved';
+    await ref.update({ ...(approved ? { pendingPlan: draft } : { currentPlan: draft }), planDraftJob: { ...job, status: 'done', finishedAt: finished.toISOString() } });
+  });
+
+  return {
+    ok: true,
+    speech: `Comecei a montar o rascunho do plano de ${patient.name}${instructions ? ', com as suas orientações' : ''}. Leva cerca de um minuto. `
+      + 'Depois é só me pedir para ler o rascunho, ou abrir o prontuário no aplicativo para revisar e aprovar.'
+      + (replacesApproved ? ' O plano atual continua valendo até você aprovar o novo.' : ''),
+    plan: { patientName: patient.name, status: 'running' },
+  };
+}
+
+/** Lê o rascunho esperando aprovação (ou diz se ainda está sendo montado ou se falhou). Aprovar é sempre no app. */
+export async function planDraft(db: Firestore, nutritionistId: string, patientName: unknown, now = new Date()): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  const snap = await db.collection('patients').doc(patient.uid).get();
+  const data = snap.exists ? snap.data() || {} : {};
+  const job = planJobOf(data.planDraftJob);
+  if (jobRunning(job, now)) return { ok: true, speech: `Ainda estou montando o rascunho de ${patient.name}. Peça de novo em alguns segundos.`, plan: { patientName: patient.name, status: 'running' } };
+  // Falhou, ou ficou parado em andamento: o último pedido não gerou rascunho.
+  const failed = !!job && job.status !== 'done';
+  const draft = draftOf(data);
+  if (!draft || !draft.days.length) {
+    if (failed) {
+      return {
+        ok: true,
+        speech: `Não consegui montar o último rascunho de ${patient.name}. ${job?.reason ? `${withPeriod(job.reason)} ` : ''}Quer que eu tente de novo?`,
+        plan: { patientName: patient.name, status: 'failed' },
+      };
+    }
+    return {
+      ok: true,
+      speech: `${patient.name} não tem rascunho de plano esperando aprovação.${patient.plan === 'approved' ? ' O plano aprovado continua valendo.' : ''} Quer que eu monte um?`,
+      plan: { patientName: patient.name, status: 'none' },
+    };
+  }
+  const describe = (day: DraftDay) => `${day.name}: ${day.meals.map((meal) => `${meal.name}${meal.time ? ` às ${meal.time}` : ''}, ${joinPt(meal.items.slice(0, 4))}`).join('; ')}.`;
+  const others = draft.days.slice(1).map((day) => day.name);
+  return {
+    ok: true,
+    speech: (failed ? 'O último pedido de rascunho não deu certo; este é o rascunho anterior. ' : '')
+      + `Rascunho do plano de ${patient.name}${draft.source === 'ali' ? ', feito pela Ali' : ''}, esperando a sua aprovação. `
+      + `${clipSpoken(describe(draft.days[0]), 900)}`
+      + (others.length ? ` Também tem ${joinPt(others)}.` : '')
+      + ' Para aprovar ou mudar, abra o prontuário no aplicativo.',
+    plan: { patientName: patient.name, status: 'draft', replacesApproved: !!data.pendingPlan, days: draft.days },
   };
 }
 

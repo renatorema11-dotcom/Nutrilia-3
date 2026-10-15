@@ -27,6 +27,19 @@ export interface Plan {
   status: 'draft' | 'approved';
   createdDate: string;
   days?: PlanDay[];
+  /** 'ali' quando o rascunho foi montado pela Ali da nutricionista, por voz. */
+  source?: string;
+  /** Orientações que a nutricionista deu para o rascunho. */
+  instructions?: string;
+}
+
+/** Andamento do rascunho pedido à Ali (a IA monta em segundo plano). */
+export interface PlanDraftJob {
+  id: string;
+  status: 'running' | 'done' | 'failed';
+  startedAt: string;
+  finishedAt?: string;
+  reason?: string;
 }
 
 export interface Patient {
@@ -51,6 +64,9 @@ export interface Patient {
   nextAppointment?: string;
   measurements: Measurement[];
   currentPlan?: Plan | null;
+  /** Rascunho novo feito pela Ali enquanto o plano aprovado continua valendo; vira o plano atual quando aprovado. */
+  pendingPlan?: Plan | null;
+  planDraftJob?: PlanDraftJob;
   pastPlans?: Plan[];
   /** Senha temporária gerada no cadastro — NÃO é persistida no Firestore. Exibida uma única vez ao nutricionista. */
   tempPassword?: string;
