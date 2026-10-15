@@ -6,7 +6,7 @@ const { createFirestore, createGoogle, loadLib } = require('./fakes.cjs');
 
 const { store, db, FieldValue } = createFirestore();
 const google = createGoogle();
-const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'nutritionist-assistant.ts'], { FieldValue, fetch: google.fetch });
+const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'daily-log.ts', 'consultation-notes.ts', 'nutritionist-assistant.ts'], { FieldValue, fetch: google.fetch });
 context.db = db;
 const run = (code) => vm.runInContext(code, context);
 const call = (fn, input, extra = '') => { context.input = input; return run(`${fn}(db, 'nutri-1', input${extra})`); };
@@ -321,6 +321,134 @@ context.now = NOW;
     assert.equal(blind.summary.away, null);
     store.set('users/nutri-vazia', { role: 'nutritionist', displayName: 'Nova' });
     assert.match((await run("weekSummary(db, 'nutri-vazia', lastSeen, now)")).speech, /ainda não tem pacientes/);
+  });
+
+  // ───────────── Fase 2 ─────────────
+
+  await check('pedidos de consulta: só os pendentes dela, do mais antigo ao mais novo', async () => {
+    store.set('appointmentRequests/r1', { patientUid: 'p-bia', nutritionistId: NUTRI, patientName: 'Bia Costa', preferredDate: 'sexta de manhã', notes: 'Prefiro online', status: 'pending', createdAt: '2026-10-11T12:00:00.000Z' });
+    store.set('appointmentRequests/r2', { patientUid: 'p-ana2', nutritionistId: NUTRI, patientName: 'Ana Paula Lima', preferredDate: 'a combinar', notes: '', status: 'pending', createdAt: '2026-10-13T11:00:00.000Z' });
+    store.set('appointmentRequests/r3', { patientUid: 'p-ana', nutritionistId: NUTRI, patientName: 'Ana Souza', preferredDate: 'semana passada', status: 'confirmed', createdAt: '2026-10-01T12:00:00.000Z' });
+    store.set('appointmentRequests/r4', { patientUid: 'p-outro', nutritionistId: 'nutri-2', patientName: 'Marcos', preferredDate: 'segunda', status: 'pending', createdAt: '2026-10-10T12:00:00.000Z' });
+    const list = await run("listAppointmentRequests(db, 'nutri-1', now)");
+    assert.equal(list.speech, 'Você tem 2 pedidos de consulta esperando resposta: Bia Costa, com preferência por sexta de manhã, pedido há 2 dias; observação: Prefiro online. Ana Paula Lima, sem data de preferência, pedido hoje.');
+    assert.deepEqual(Array.from(list.requests, (r) => r.patientName), ['Bia Costa', 'Ana Paula Lima']);
+    assert.equal((await run("listAppointmentRequests(db, 'nutri-vazia', now)")).speech, 'Não há pedidos de consulta esperando resposta.');
+  });
+
+  await check('marcar a consulta de quem pediu atende o pedido; o paciente vê a consulta marcada', async () => {
+    const booked = await call('scheduleConsultation', { patientName: 'Bia Costa', date: '2026-10-16', time: '15:00' }, ', now');
+    assert.equal(booked.ok, true);
+    assert.match(booked.speech, /Marquei a consulta de Bia Costa .* O pedido de consulta que estava aberto foi marcado como atendido\.$/);
+    const r1 = store.get('appointmentRequests/r1');
+    assert.deepEqual([r1.status, r1.appointmentLabel, r1.answeredAt], ['confirmed', 'sexta-feira, 16 de outubro, às 15:00', NOW.toISOString()]);
+    assert.equal(store.get('appointmentRequests/r2').status, 'pending'); // o pedido de outra paciente continua aberto
+    assert.equal(store.get('appointmentRequests/r4').status, 'pending');
+  });
+
+  await check('encerrar pedido sem marcar: com texto, o recado vai para o chat; sem texto, só o aviso no app', async () => {
+    const declined = await call('declineAppointmentRequest', { patientName: 'Ana Paula Lima', text: ' Esta semana não tenho horário. Vamos ver na próxima? ' }, ', now');
+    assert.equal(declined.speech, 'Pedido de consulta de Ana Paula Lima encerrado. O recado foi enviado no chat do aplicativo.');
+    assert.equal(store.get('appointmentRequests/r2').status, 'declined');
+    const chat = [...store.entries()].filter(([key]) => key.startsWith('chats/p-ana2_nutri-1/messages/')).map(([, value]) => [value.senderRole, value.text]);
+    assert.deepEqual(chat, [['nutritionist', 'Esta semana não tenho horário. Vamos ver na próxima?']]);
+    const none = await call('declineAppointmentRequest', { patientName: 'Ana Paula Lima' }, ', now');
+    assert.equal(none.status, 409);
+    assert.match(none.speech, /não tem pedido de consulta esperando resposta/);
+
+    store.set('appointmentRequests/r5', { patientUid: 'p-joao', nutritionistId: NUTRI, patientName: 'João Pereira', preferredDate: 'qualquer dia', status: 'pending', createdAt: '2026-10-12T12:00:00.000Z' });
+    const quiet = await call('declineAppointmentRequest', { patientName: 'João Pereira' }, ', now');
+    assert.equal(quiet.speech, 'Pedido de consulta de João Pereira encerrado. No aplicativo, o paciente vê que o pedido não pôde ser atendido.');
+    assert.equal([...store.keys()].filter((key) => key.startsWith('chats/p-joao_')).length, 0);
+
+    // Recado longo demais e paciente de outra nutricionista não mudam nenhum pedido.
+    store.set('appointmentRequests/r6', { patientUid: 'p-joao', nutritionistId: NUTRI, patientName: 'João Pereira', preferredDate: 'qualquer dia', status: 'pending', createdAt: '2026-10-13T09:00:00.000Z' });
+    assert.equal((await call('declineAppointmentRequest', { patientName: 'João Pereira', text: 'x'.repeat(1001) }, ', now')).status, 422);
+    assert.equal(store.get('appointmentRequests/r6').status, 'pending');
+    assert.equal((await call('declineAppointmentRequest', { patientName: 'Marcos' }, ', now')).status, 404);
+    assert.equal(store.get('appointmentRequests/r4').status, 'pending');
+    assert.match((await run("listAppointmentRequests(db, 'nutri-1', now)")).speech, /^Você tem 1 pedido de consulta esperando resposta: João Pereira, com preferência por qualquer dia, pedido hoje\.$/);
+  });
+
+  await check('anotações da consulta: fora do prontuário que o paciente lê, e só da nutricionista certa', async () => {
+    const saved = await call('addConsultationNote', { patientName: 'Ana Souza', text: '  Relatou mais fome à noite.\r\n\r\n\r\nCombinamos trocar o lanche da tarde.  ' }, ', now');
+    assert.equal(saved.speech, 'Anotação salva no prontuário de Ana Souza. Só você vê as anotações das consultas.');
+    const stored = [...store.entries()].filter(([key]) => key.startsWith('consultationNotes/')).map(([, value]) => value);
+    assert.deepEqual(stored, [{ nutritionistId: NUTRI, patientUid: 'p-ana', text: 'Relatou mais fome à noite.\n\nCombinamos trocar o lanche da tarde.', source: 'ali', createdAt: NOW.toISOString() }]);
+    assert.ok(!JSON.stringify(store.get('patients/p-ana')).includes('fome'));
+    assert.equal((await call('addConsultationNote', { patientName: 'Ana Souza', text: 'ok' }, ', now')).status, 422);
+    assert.equal((await call('addConsultationNote', { patientName: 'Ana Souza', text: 'x'.repeat(2001) }, ', now')).status, 422);
+    assert.equal((await call('addConsultationNote', { patientName: 'Marcos', text: 'Anotação qualquer' }, ', now')).status, 404);
+
+    store.set('consultationNotes/antiga', { nutritionistId: NUTRI, patientUid: 'p-ana', text: 'Primeira consulta: objetivo emagrecer.', source: 'app', createdAt: '2026-09-29T15:00:00.000Z' });
+    store.set('consultationNotes/alheia', { nutritionistId: 'nutri-2', patientUid: 'p-ana', text: 'Nota de outra pessoa', source: 'app', createdAt: '2026-10-12T15:00:00.000Z' });
+    context.name = 'Ana Souza';
+    const notes = await run("consultationNotes(db, 'nutri-1', name)");
+    assert.equal(notes.speech, 'Últimas 2 anotações de Ana Souza. Em 13 de outubro: Relatou mais fome à noite. Combinamos trocar o lanche da tarde. Em 29 de setembro: Primeira consulta: objetivo emagrecer.');
+    // Apagar: só a dona da anotação.
+    assert.equal(await run("removeNote(db, 'nutri-2', 'antiga')"), false);
+    assert.equal(await run("removeNote(db, 'nutri-1', 'alheia')"), false);
+    assert.equal(await run("removeNote(db, 'nutri-1', '../antiga')"), false);
+    assert.equal(await run("removeNote(db, 'nutri-1', 'antiga')"), true);
+    assert.equal(store.has('consultationNotes/antiga'), false);
+    assert.equal(store.has('consultationNotes/alheia'), true);
+    context.name = 'João Pereira';
+    assert.equal((await run("consultationNotes(db, 'nutri-1', name)")).speech, 'Você ainda não tem anotações de consulta de João Pereira.');
+  });
+
+  await check('resumo antes da consulta: peso, registros, água e humor, acesso, plano, pedido e última anotação', async () => {
+    store.set('patients/p-ana', { ...store.get('patients/p-ana'), measurements: [{ date: '2026-09-29', weight: 73 }, ...store.get('patients/p-ana').measurements] });
+    store.set('patients/p-ana/foodLogs/l2', { description: 'Jantar: sopa de legumes', loggedAt: '2026-10-10T22:00:00.000Z' });
+    store.set('patients/p-ana/foodLogs/l3', { description: 'Antiga', loggedAt: '2026-09-20T12:00:00.000Z' });
+    store.set('users/p-ana', { role: 'patient', waterIntake: { amount: 1250, date: '2026-10-13' }, moodDiary: { mood: 'happy', date: '2026-10-13' } });
+    context.lastSeen = async () => new Map([['p-ana', new Date('2026-10-12T12:00:00Z')], ['p-joao', new Date('2026-10-01T12:00:00Z')], ['p-ana2', null]]);
+    context.name = 'Ana Souza';
+    const ana = await run("consultationBrief(db, 'nutri-1', name, lastSeen, now)");
+    assert.equal(ana.speech, 'Resumo de Ana Souza, com consulta marcada para quinta-feira, 22 de outubro, às 16:30. Objetivo: Emagrecimento. '
+      + 'Peso atual 71,5 quilos, de 13 de outubro; desceu 1,5 quilos desde 29 de setembro; faltam 6,5 quilos para a meta de 65 quilos. '
+      + 'Nos últimos 14 dias, 2 refeições anotadas pela Ali, em 2 dias; a mais recente: Almoço. Hoje: 1250 ml de água e humor feliz. '
+      + 'Abriu o aplicativo ontem. Plano alimentar aprovado. Última anotação de consulta, de 13 de outubro: Relatou mais fome à noite. Combinamos trocar o lanche da tarde.');
+
+    // Sem nome: a próxima consulta marcada (a de Bia, sexta às 15:00).
+    context.name = '';
+    const next = await run("consultationBrief(db, 'nutri-1', name, lastSeen, now)");
+    assert.equal(next.speech, 'Resumo de Bia Costa, com consulta marcada para sexta-feira, 16 de outubro, às 15:00. Nos últimos 14 dias, nenhuma refeição anotada pela Ali. Ainda sem plano alimentar. Ainda não há anotações de consulta.');
+    const nothing = await run("consultationBrief(db, 'nutri-vazia', name, lastSeen, now)");
+    assert.equal(nothing.status, 404);
+
+    // Consulta marcada à mão no app também conta; pedido aberto e dias sem abrir o app entram no resumo.
+    store.set(`users/${NUTRI}`, { ...store.get(`users/${NUTRI}`), appointments: [...store.get(`users/${NUTRI}`).appointments,
+      { id: 'man_1', patientName: 'João Pereira', date: '2026-10-14', time: '08:00', status: 'Agendada', source: 'manual', patientUid: 'p-joao' }] });
+    context.name = 'joão';
+    const joao = await run("consultationBrief(db, 'nutri-1', name, lastSeen, now)");
+    assert.equal(joao.speech, 'Resumo de João Pereira, com consulta marcada para quarta-feira, 14 de outubro, às 08:00. Objetivo: Saúde. '
+      + 'Peso atual 89 quilos, de 13 de outubro; desceu 1 quilo desde 1 de outubro. Nos últimos 14 dias, nenhuma refeição anotada pela Ali. '
+      + 'Está há 12 dias sem abrir o aplicativo. Ainda sem plano alimentar. Tem um pedido de consulta aberto, com preferência por qualquer dia. Ainda não há anotações de consulta.');
+    // Sem a informação de acesso, a frase do último acesso fica de fora.
+    context.failing = async () => { throw new Error('login fora do ar'); };
+    assert.doesNotMatch((await run("consultationBrief(db, 'nutri-1', name, failing, now)")).speech, /aplicativo\./);
+    context.name = 'Marcos';
+    assert.equal((await run("consultationBrief(db, 'nutri-1', name, lastSeen, now)")).status, 404);
+  });
+
+  await check('quem precisa de atenção: motivos por paciente, do mais urgente ao menos urgente', async () => {
+    store.set('patients/p-ana2', { ...store.get('patients/p-ana2'), targetWeight: 60, measurements: [{ date: '2026-10-01', weight: 62 }, { date: '2026-10-12', weight: 63.4 }] });
+    store.set('users/p-bia', { role: 'patient', moodDiary: { mood: 'sad', date: '2026-10-13' } });
+    const list = await run("attentionList(db, 'nutri-1', lastSeen, now)");
+    assert.equal(list.speech, '3 pacientes precisam de atenção. '
+      + 'Ana Paula Lima: o peso subiu 1,4 quilos na última medição, se afastando da meta, ainda não entrou no aplicativo e o plano está esperando a sua aprovação. '
+      + 'João Pereira: pediu consulta, com preferência por qualquer dia, está há 12 dias sem abrir o aplicativo e ainda não tem plano alimentar. '
+      + 'Bia Costa: marcou hoje que não está bem e ainda não tem plano alimentar.');
+    assert.deepEqual(Array.from(list.attention, (row) => row.name), ['Ana Paula Lima', 'João Pereira', 'Bia Costa']);
+    assert.ok(!list.speech.includes('Ana Souza'));
+    // Sem a informação de acesso, ninguém é acusado de sumido.
+    const blind = await run("attentionList(db, 'nutri-1', failing, now)");
+    assert.doesNotMatch(blind.speech, /aplicativo/);
+    assert.deepEqual(Array.from(blind.attention, (row) => row.name), ['Ana Paula Lima', 'Bia Costa', 'João Pereira']);
+    store.set('users/nutri-4', { role: 'nutritionist', displayName: 'Tudo em dia' });
+    store.set('patients/p-ok', { name: 'Paciente Em Dia', nutritionistId: 'nutri-4', currentPlan: { status: 'approved' } });
+    assert.equal((await run("attentionList(db, 'nutri-4', lastSeen, now)")).speech, 'Ninguém precisa de atenção especial agora.');
+    assert.match((await run("attentionList(db, 'nutri-vazia', lastSeen, now)")).speech, /ainda não tem pacientes/);
   });
 
   await check('sem Google conectado, a Ali explica onde conectar', async () => {

@@ -40,6 +40,12 @@ async function test(name, options, status, inspect = () => {}) {
     sendChatMessage: fixed('sendChatMessage'),
     sendPlanToPatient: fixed('sendPlanToPatient'),
     weekSummary: fixed('weekSummary', { summary: { patients: 4 } }),
+    consultationBrief: fixed('consultationBrief', { brief: { patientName: 'Ana' } }),
+    attentionList: fixed('attentionList', { attention: [] }),
+    listAppointmentRequests: fixed('listAppointmentRequests', { requests: [] }),
+    consultationNotes: fixed('consultationNotes', { notes: [] }),
+    declineAppointmentRequest: fixed('declineAppointmentRequest'),
+    addConsultationNote: fixed('addConsultationNote', { note: { patientName: 'Ana' } }),
     ...options.assistant,
   };
   const env = { AGENT_API_SECRET: secret, FIREBASE_SERVICE_ACCOUNT_KEY: JSON.stringify({ project_id: cfg.projectId }), ...options.env };
@@ -92,7 +98,7 @@ async function test(name, options, status, inspect = () => {}) {
   await test('Payload em lista', { body: { action: 'list_patients', payload: [] } }, 400);
   await test('Ação fora da lista', { body: { action: 'delete_patient' } }, 400);
   await test('Ação de paciente não vale aqui', { body: { action: 'log_meal', confirmed: true } }, 400);
-  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email']) {
+  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note']) {
     await test(`Exige confirmação: ${action}`, { body: { action, payload: {} } }, 422);
     await test(`Confirmação em texto não vale: ${action}`, { body: { action, confirmed: 'true', payload: {} } }, 422);
   }
@@ -137,6 +143,33 @@ async function test(name, options, status, inspect = () => {}) {
   });
   await test('Plano por e-mail recebe só o nome do paciente', { body: { action: 'send_plan_email', confirmed: true, payload: { patientName: 'Ana', to: 'outra@pessoa.com' } } }, 200, (_, __, acted) => {
     assert.deepEqual(acted[0], ['sendPlanToPatient', 'nutri-A', 'Ana']);
+  });
+  await test('Resumo antes da consulta é leitura: recebe o nome e a busca de último acesso', { body: { action: 'get_consultation_brief', payload: { patientName: 'Ana', text: 'ignorado' } } }, 200, (_, json, acted) => {
+    assert.deepEqual(acted[0].slice(0, 3), ['consultationBrief', 'nutri-A', 'Ana']);
+    assert.equal(typeof acted[0][3], 'function');
+    assert.equal(json.brief.patientName, 'Ana');
+  });
+  await test('Quem precisa de atenção é leitura e usa a busca de último acesso', { body: { action: 'get_attention_list' } }, 200, (_, __, acted) => {
+    assert.deepEqual(acted[0].slice(0, 2), ['attentionList', 'nutri-A']);
+    assert.equal(typeof acted[0][2], 'function');
+  });
+  await test('Pedidos de consulta e anotações são leituras sem confirmação', { body: { action: 'list_appointment_requests' } }, 200, (_, __, acted) => {
+    assert.deepEqual(acted[0], ['listAppointmentRequests', 'nutri-A']);
+  });
+  await test('Ler anotações recebe só o nome do paciente', { body: { action: 'get_consultation_notes', payload: { patientName: 'Ana', nutritionistId: 'nutri-B' } } }, 200, (_, __, acted) => {
+    assert.deepEqual(acted[0], ['consultationNotes', 'nutri-A', 'Ana']);
+  });
+  await test('Anotação confirmada é salva e auditada sem o texto', { body: { action: 'add_consultation_note', confirmed: true, payload: { patientName: 'Ana', text: 'Anotação reservada' } } }, 200, (events, json, acted) => {
+    assert.equal(acted[0][0], 'addConsultationNote');
+    assert.equal(acted[0][2].text, 'Anotação reservada');
+    const audit = events.find((e) => e[0] === 'audit');
+    assert.equal(audit[2].action, 'add_consultation_note');
+    assert.ok(!JSON.stringify(audit[2]).includes('Anotação reservada'));
+    assert.equal(json.note.patientName, 'Ana');
+  });
+  await test('Encerrar pedido de consulta confirmado chega à função certa', { body: { action: 'decline_appointment_request', confirmed: true, payload: { patientName: 'Ana', text: 'Sem horário esta semana.' } } }, 200, (_, __, acted) => {
+    assert.equal(acted[0][0], 'declineAppointmentRequest');
+    assert.equal(acted[0][2].patientName, 'Ana');
   });
   await test('Recusa da ação chega à Ali com o status certo', { reachesAction: true, assistant: { createEvent: async () => ({ ok: false, status: 409, speech: 'Você já tem um compromisso nesse horário.' }) },
     body: { action: 'create_event', confirmed: true, payload: { title: 'Reunião' } } }, 409, (_, json) => {

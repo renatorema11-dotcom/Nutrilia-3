@@ -26,6 +26,7 @@ function createFirestore() {
       collection: (sub) => collectionOf(`${key}/${sub}`),
       get: async () => ({ exists: store.has(key), id, ref: docRef(col, id), data: () => (store.has(key) ? structuredClone(store.get(key)) : undefined) }),
       set: async (data, options) => { store.set(key, structuredClone(merge(options?.merge ? store.get(key) || {} : {}, data))); },
+      delete: async () => { store.delete(key); },
       update: async (data) => {
         if (!store.has(key)) throw new Error('documento não existe');
         const current = structuredClone(store.get(key));
