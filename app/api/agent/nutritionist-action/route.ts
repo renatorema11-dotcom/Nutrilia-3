@@ -1,20 +1,22 @@
 import { getAuth } from 'firebase-admin/auth';
+import { after } from 'next/server';
 import type { App } from 'firebase-admin/app';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAdminApp, getAdminDb, hasGatewaySecret, json, lastSeenLookup } from '@/lib/firebase-admin';
 import * as assistant from '@/lib/nutritionist-assistant';
 import { approvalOf } from '@/lib/nutritionist-approval';
+import { generatePlanDraft } from '@/lib/plan-draft';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Ações que só leem dados; as demais exigem o "sim" da nutricionista. */
 const READ_ONLY_ACTIONS = ['list_patients', 'get_patient', 'get_agenda', 'list_contacts', 'get_week_summary',
-  'get_consultation_brief', 'get_attention_list', 'list_appointment_requests', 'get_consultation_notes'] as const;
+  'get_consultation_brief', 'get_attention_list', 'list_appointment_requests', 'get_consultation_notes', 'get_plan_draft'] as const;
 
 /** Ações que marcam, mudam, gravam ou enviam algo. */
 const WRITE_ACTIONS = ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email',
-  'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note'] as const;
+  'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft'] as const;
 
 /** Ações da Ali da nutricionista: segredo do gateway + ID token Firebase de uma conta de nutricionista. */
 type Action = (typeof READ_ONLY_ACTIONS)[number] | (typeof WRITE_ACTIONS)[number];
@@ -90,6 +92,9 @@ export async function POST(req: Request) {
       case 'get_consultation_notes': result = await assistant.consultationNotes(db, uid, payload.patientName); break;
       case 'decline_appointment_request': result = await assistant.declineAppointmentRequest(db, uid, payload); break;
       case 'add_consultation_note': result = await assistant.addConsultationNote(db, uid, payload); break;
+      // A IA leva até um minuto: o rascunho é montado depois da resposta, para a voz não ficar esperando.
+      case 'create_plan_draft': result = await assistant.createPlanDraft(db, uid, payload, generatePlanDraft, (task) => after(task)); break;
+      case 'get_plan_draft': result = await assistant.planDraft(db, uid, payload.patientName); break;
       default: return reply(false, 'Ação não reconhecida.', 400);
     }
     if (!result.ok) return reply(false, result.speech, result.status);
