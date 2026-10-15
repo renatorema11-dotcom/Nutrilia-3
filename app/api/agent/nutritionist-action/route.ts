@@ -9,11 +9,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Ações que só leem dados; as demais exigem o "sim" da nutricionista. */
-const READ_ONLY_ACTIONS = ['list_patients', 'get_patient', 'get_agenda', 'list_contacts', 'get_week_summary'] as const;
+const READ_ONLY_ACTIONS = ['list_patients', 'get_patient', 'get_agenda', 'list_contacts', 'get_week_summary',
+  'get_consultation_brief', 'get_attention_list', 'list_appointment_requests', 'get_consultation_notes'] as const;
 
 /** Ações que marcam, mudam, gravam ou enviam algo. */
 const WRITE_ACTIONS = ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email',
-  'log_measurement', 'send_chat_message', 'send_plan_email'] as const;
+  'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note'] as const;
 
 /** Ações da Ali da nutricionista: segredo do gateway + ID token Firebase de uma conta de nutricionista. */
 type Action = (typeof READ_ONLY_ACTIONS)[number] | (typeof WRITE_ACTIONS)[number];
@@ -83,6 +84,12 @@ export async function POST(req: Request) {
       case 'log_measurement': result = await assistant.logMeasurement(db, uid, payload); break;
       case 'send_chat_message': result = await assistant.sendChatMessage(db, uid, payload); break;
       case 'send_plan_email': result = await assistant.sendPlanToPatient(db, uid, payload.patientName); break;
+      case 'get_consultation_brief': result = await assistant.consultationBrief(db, uid, payload.patientName, lastSeenLookup); break;
+      case 'get_attention_list': result = await assistant.attentionList(db, uid, lastSeenLookup); break;
+      case 'list_appointment_requests': result = await assistant.listAppointmentRequests(db, uid); break;
+      case 'get_consultation_notes': result = await assistant.consultationNotes(db, uid, payload.patientName); break;
+      case 'decline_appointment_request': result = await assistant.declineAppointmentRequest(db, uid, payload); break;
+      case 'add_consultation_note': result = await assistant.addConsultationNote(db, uid, payload); break;
       default: return reply(false, 'Ação não reconhecida.', 400);
     }
     if (!result.ok) return reply(false, result.speech, result.status);
