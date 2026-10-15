@@ -6,10 +6,12 @@ import type { AliContact } from './ali-settings';
 import { describeDates, isFree, localDateKey, parseLocalDateTime, slotLabel, toOffsetIso } from './agenda';
 import type { Interval } from './agenda';
 import { cancelNextByNutritionist, rescheduleNextByNutritionist } from './appointments';
-import { CALENDAR_EVENTS_URL, busyIntervals, connectionStatus, createAppointment, emailLayout, escapeHtml, getAccess, googleRequest, isValidEmail, loadSettings, newNonce, p, sendMail, sendPlanEmail } from './google-workspace';
+import { APPOINTMENTS_COLLECTION, CALENDAR_EVENTS_URL, busyIntervals, connectionStatus, createAppointment, emailLayout, escapeHtml, getAccess, googleRequest, isValidEmail, loadSettings, newNonce, p, sendMail, sendPlanEmail } from './google-workspace';
 import type { ActionResult } from './google-workspace';
 import { collectWeek } from './weekly-report';
 import type { LastSeenLookup } from './weekly-report';
+import { MOOD_LABELS, moodToday, waterToday } from './daily-log';
+import { cleanNote, listNotesFor, saveNote } from './consultation-notes';
 
 const NOT_CONNECTED = 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.';
 const DAILY_EMAIL_LIMIT = 40;
@@ -184,10 +186,20 @@ export async function scheduleConsultation(db: Firestore, nutritionistId: string
   const conflict = await conflictWarning(access.token, timing.start, timing.end, settings.timezone, input.force);
   if (conflict) return conflict;
   const mode = settings.mode === 'ambos' ? (input.mode === 'presencial' ? 'presencial' : 'online') : settings.mode;
-  return createAppointment(db, access, settings, {
+  const result = await createAppointment(db, access, settings, {
     nutritionistId, patientUid: patient.uid, patientName: patient.name, patientEmail: patient.email,
     start: timing.start, end: timing.end, mode, notes: cleanText(input.notes, 500), bookedBy: 'nutritionist',
   }, now);
+  if (!result.ok) return result;
+  // Marcar a consulta de quem tinha pedido é atender o pedido: ele sai da lista de pendentes.
+  try {
+    const booked = result.appointment as { label?: unknown } | undefined;
+    const closed = await closeRequestsAfterBooking(db, nutritionistId, patient.uid, typeof booked?.label === 'string' ? booked.label : '', now);
+    if (closed) return { ...result, speech: `${result.speech} O pedido de consulta que estava aberto foi marcado como atendido.` };
+  } catch {
+    console.error('Ali da nutricionista: consulta marcada, mas o pedido de consulta não foi encerrado.');
+  }
+  return result;
 }
 
 export async function cancelConsultation(db: Firestore, nutritionistId: string, patientName: unknown, now = new Date()): Promise<ActionResult> {
@@ -271,14 +283,18 @@ export async function sendChatMessage(db: Firestore, nutritionistId: string, inp
   if (text.length < 2) return { ok: false, status: 422, speech: 'Qual é o recado?' };
   if (text.length > CHAT_MESSAGE_MAX) return { ok: false, status: 422, speech: 'O recado ficou longo demais para o chat. Resuma em poucas frases ou mande por e-mail.' };
 
+  await postChatMessage(db, nutritionistId, patient.uid, text, now);
+  return { ok: true, speech: `Recado enviado para ${patient.name} no chat do aplicativo.`, message: { to: patient.name } };
+}
+
+/** Mesmo endereço e mesmo formato das mensagens que ela escreve na tela "Chat com Pacientes". */
+async function postChatMessage(db: Firestore, nutritionistId: string, patientUid: string, text: string, now: Date): Promise<void> {
   const settings = await loadSettings(db, nutritionistId);
-  // Mesmo endereço e mesmo formato das mensagens que ela escreve na tela "Chat com Pacientes".
-  const chat = db.collection('chats').doc(`${patient.uid}_${nutritionistId}`);
+  const chat = db.collection('chats').doc(`${patientUid}_${nutritionistId}`);
   await chat.set({ updatedAt: now }, { merge: true });
   await chat.collection('messages').add({
     senderId: nutritionistId, senderName: settings.displayName || 'Nutricionista', senderRole: 'nutritionist', text, createdAt: now.toISOString(),
   });
-  return { ok: true, speech: `Recado enviado para ${patient.name} no chat do aplicativo.`, message: { to: patient.name } };
 }
 
 /** Envia o plano alimentar aprovado de um paciente dela para o e-mail dele, pelo Gmail dela. */
@@ -359,6 +375,326 @@ export async function weekSummary(db: Firestore, nutritionistId: string, lastSee
       patients: data.patients.length, appointments: data.appointments.length, active: active.map((patient) => patient.name),
       away: data.seenKnown ? away.map((patient) => patient.name) : null, drafts: drafts.map((patient) => patient.name), noPlan: noPlan.map((patient) => patient.name),
     },
+  };
+}
+
+// ───────────── Fase 2: pedidos de consulta, anotações, resumo antes da consulta e quem precisa de atenção ─────────────
+
+/** Texto longo encurtado para a Ali falar. */
+function clipSpoken(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
+}
+
+const withPeriod = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`);
+
+/** "13 de outubro", a partir de uma data AAAA-MM-DD. */
+const dateKeyLabel = (key: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: 'numeric', month: 'long' }).format(new Date(`${key}T12:00:00Z`));
+
+/** "13 de outubro", a partir de um instante gravado, no fuso da nutricionista. */
+const noteDay = (iso: string, timeZone: string) => new Intl.DateTimeFormat('pt-BR', { timeZone, day: 'numeric', month: 'long' }).format(new Date(iso));
+
+const MEASURE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Medições com data e peso válidos, da mais antiga para a mais recente. */
+function measurementsOf(data: Record<string, unknown>): { date: string; weight: number }[] {
+  return (Array.isArray(data.measurements) ? data.measurements : [])
+    .filter((m: Record<string, unknown>) => m && typeof m.date === 'string' && MEASURE_DATE_RE.test(m.date) && typeof m.weight === 'number')
+    .map((m: Record<string, unknown>) => ({ date: m.date as string, weight: m.weight as number }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+interface PendingRequest { id: string; patientUid: string; patientName: string; preferredDate: string; notes: string; createdAt: string }
+
+/** Pedidos de consulta que os pacientes dela fizeram pela Ali e ainda não tiveram resposta, do mais antigo ao mais novo. */
+async function pendingRequests(db: Firestore, nutritionistId: string): Promise<PendingRequest[]> {
+  const snap = await db.collection('appointmentRequests').where('nutritionistId', '==', nutritionistId).where('status', '==', 'pending').get();
+  return snap.docs
+    .map((doc) => {
+      const d = doc.data() || {};
+      return {
+        id: doc.id, patientUid: typeof d.patientUid === 'string' ? d.patientUid : '',
+        patientName: cleanText(d.patientName, 120) || 'Paciente', preferredDate: cleanText(d.preferredDate, 100) || 'a combinar',
+        notes: cleanText(d.notes, 1000), createdAt: typeof d.createdAt === 'string' ? d.createdAt : '',
+      };
+    })
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** A Ali grava "a combinar" quando o paciente não disse a data. */
+const preference = (preferredDate: string) => (preferredDate === 'a combinar' ? 'sem data de preferência' : `com preferência por ${preferredDate}`);
+
+function requestAge(createdAt: string, now: Date): string {
+  const days = Math.floor((now.getTime() - Date.parse(createdAt)) / ONE_DAY_MS);
+  if (!Number.isFinite(days) || days <= 0) return 'pedido hoje';
+  return days === 1 ? 'pedido ontem' : `pedido há ${days} dias`;
+}
+
+/** Marcar a consulta de quem tinha pedido atende o pedido: o paciente passa a ver "Confirmada" no app. */
+async function closeRequestsAfterBooking(db: Firestore, nutritionistId: string, patientUid: string, label: string, now: Date): Promise<number> {
+  const open = (await pendingRequests(db, nutritionistId)).filter((request) => request.patientUid === patientUid);
+  await Promise.all(open.map((request) => db.collection('appointmentRequests').doc(request.id)
+    .set({ status: 'confirmed', answeredAt: now.toISOString(), ...(label ? { appointmentLabel: label } : {}) }, { merge: true })));
+  return open.length;
+}
+
+export async function listAppointmentRequests(db: Firestore, nutritionistId: string, now = new Date()): Promise<ActionResult> {
+  const requests = await pendingRequests(db, nutritionistId);
+  if (!requests.length) return { ok: true, speech: 'Não há pedidos de consulta esperando resposta.', requests: [] };
+  const spoken = requests.slice(0, 8).map((request) => `${request.patientName}, ${preference(request.preferredDate)}, ${requestAge(request.createdAt, now)}`
+    + (request.notes ? `; observação: ${clipSpoken(request.notes, 160)}` : ''));
+  return {
+    ok: true,
+    speech: `Você tem ${requests.length} ${requests.length === 1 ? 'pedido de consulta esperando resposta' : 'pedidos de consulta esperando resposta'}: `
+      + `${spoken.map(withPeriod).join(' ')}${requests.length > spoken.length ? ` E mais ${requests.length - spoken.length}.` : ''}`,
+    requests: requests.slice(0, 20).map((request) => ({ patientName: request.patientName, preferredDate: request.preferredDate, notes: request.notes, createdAt: request.createdAt })),
+  };
+}
+
+export interface DeclineInput { patientName?: unknown; text?: unknown }
+
+/** Encerra o pedido de consulta de um paciente sem marcar; com texto, o recado vai para o chat dele. */
+export async function declineAppointmentRequest(db: Firestore, nutritionistId: string, input: DeclineInput, now = new Date()): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), input.patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  const open = (await pendingRequests(db, nutritionistId)).filter((request) => request.patientUid === patient.uid);
+  if (!open.length) return { ok: false, status: 409, speech: `${patient.name} não tem pedido de consulta esperando resposta.` };
+  const text = cleanText(input.text, CHAT_MESSAGE_MAX + 1);
+  if (text.length > CHAT_MESSAGE_MAX) return { ok: false, status: 422, speech: 'O recado ficou longo demais para o chat. Resuma em poucas frases.' };
+  const withMessage = text.length >= 2;
+
+  await Promise.all(open.map((request) => db.collection('appointmentRequests').doc(request.id)
+    .set({ status: 'declined', answeredAt: now.toISOString() }, { merge: true })));
+  if (withMessage) await postChatMessage(db, nutritionistId, patient.uid, text, now);
+  return {
+    ok: true,
+    speech: `Pedido de consulta de ${patient.name} encerrado. `
+      + (withMessage ? 'O recado foi enviado no chat do aplicativo.' : 'No aplicativo, o paciente vê que o pedido não pôde ser atendido.'),
+    request: { patientName: patient.name, status: 'declined', messageSent: withMessage },
+  };
+}
+
+/** Anotação feita por voz: limite menor que o da tela, para caber no que a Ali consegue repetir antes de salvar. */
+const NOTE_BY_VOICE_MAX = 2000;
+
+export interface NoteInput { patientName?: unknown; text?: unknown }
+
+/** Anotação da consulta no prontuário de um paciente dela. Só ela vê; o paciente não tem acesso. */
+export async function addConsultationNote(db: Firestore, nutritionistId: string, input: NoteInput, now = new Date()): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), input.patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  const text = cleanNote(input.text);
+  if (text.length < 3) return { ok: false, status: 422, speech: 'O que você quer anotar?' };
+  if (text.length > NOTE_BY_VOICE_MAX) return { ok: false, status: 422, speech: 'A anotação ficou longa demais para registrar por voz. Divida em partes ou escreva na tela do paciente.' };
+  const note = await saveNote(db, nutritionistId, patient.uid, text, 'ali', now);
+  return { ok: true, speech: `Anotação salva no prontuário de ${patient.name}. Só você vê as anotações das consultas.`, note: { patientName: patient.name, createdAt: note.createdAt } };
+}
+
+export async function consultationNotes(db: Firestore, nutritionistId: string, patientName: unknown): Promise<ActionResult> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), patientName, 'do paciente');
+  if (!picked.ok) return picked.result;
+  const patient = picked.value;
+  const [notes, settings] = await Promise.all([listNotesFor(db, nutritionistId, patient.uid, 3), loadSettings(db, nutritionistId)]);
+  if (!notes.length) return { ok: true, speech: `Você ainda não tem anotações de consulta de ${patient.name}.`, notes: [] };
+  const spoken = notes.map((note) => `Em ${noteDay(note.createdAt, settings.timezone)}: ${withPeriod(clipSpoken(note.text, 400))}`);
+  return {
+    ok: true,
+    speech: `${notes.length === 1 ? 'Última anotação' : `Últimas ${notes.length} anotações`} de ${patient.name}. ${spoken.join(' ')}`,
+    notes: notes.map((note) => ({ createdAt: note.createdAt, text: clipSpoken(note.text, 400) })),
+  };
+}
+
+interface UpcomingConsultation { patientUid: string; patientName: string; start: number; label: string }
+
+/**
+ * Próxima consulta marcada: as da Ali (com o paciente certo) e as marcadas à mão no app que têm o paciente ligado.
+ * Com patientUid, só as desse paciente. Uma consulta em andamento ainda conta até o horário de terminar.
+ */
+async function nextConsultation(db: Firestore, nutritionistId: string, now: Date, timeZone: string, patientUid?: string): Promise<UpcomingConsultation | null> {
+  const [aliSnap, userSnap] = await Promise.all([
+    db.collection(APPOINTMENTS_COLLECTION).where('nutritionistId', '==', nutritionistId).where('status', '==', 'scheduled').get(),
+    db.collection('users').doc(nutritionistId).get(),
+  ]);
+  const found: UpcomingConsultation[] = aliSnap.docs
+    .map((doc) => doc.data() || {})
+    .filter((r) => typeof r.patientUid === 'string' && typeof r.startAt === 'string' && Date.parse(typeof r.endAt === 'string' ? r.endAt : r.startAt) > now.getTime())
+    .map((r) => ({ patientUid: r.patientUid, patientName: cleanText(r.patientName, 120), start: Date.parse(r.startAt), label: cleanText(r.label, 120) || slotLabel(new Date(r.startAt), timeZone) }));
+  const listed = userSnap.exists ? userSnap.data()?.appointments : [];
+  for (const a of Array.isArray(listed) ? listed : []) {
+    if (!a || a.source !== 'manual' || a.status !== 'Agendada' || typeof a.patientUid !== 'string') continue;
+    const start = parseLocalDateTime(a.date, a.time, timeZone);
+    if (start && start.getTime() + 60 * 60_000 > now.getTime()) found.push({ patientUid: a.patientUid, patientName: cleanText(a.patientName, 120), start: start.getTime(), label: slotLabel(start, timeZone) });
+  }
+  const mine = found.filter((c) => !patientUid || c.patientUid === patientUid).sort((a, b) => a.start - b.start);
+  return mine[0] || null;
+}
+
+const BRIEF_DAYS = 14;
+
+/**
+ * Resumo para a nutricionista ler antes da consulta: peso e meta, o que o paciente registrou nas duas últimas semanas,
+ * água e humor de hoje, último acesso, plano, pedido aberto e a última anotação. Sem nome, usa a próxima consulta marcada.
+ */
+export async function consultationBrief(db: Firestore, nutritionistId: string, patientName: unknown, lastSeen: LastSeenLookup, now = new Date()): Promise<ActionResult> {
+  const tz = (await loadSettings(db, nutritionistId)).timezone;
+  const patients = await loadPatients(db, nutritionistId);
+  let patient: PatientRow;
+  let consultation: UpcomingConsultation | null;
+  if (cleanText(patientName, 120)) {
+    const picked = pickOne(patients, patientName, 'do paciente');
+    if (!picked.ok) return picked.result;
+    patient = picked.value;
+    consultation = await nextConsultation(db, nutritionistId, now, tz, patient.uid);
+  } else {
+    consultation = await nextConsultation(db, nutritionistId, now, tz);
+    const found = consultation ? patients.find((row) => row.uid === consultation?.patientUid) : undefined;
+    if (!found) return { ok: false, status: 404, speech: 'Não encontrei a próxima consulta marcada. De qual paciente você quer o resumo?' };
+    patient = found;
+  }
+
+  const since = new Date(now.getTime() - BRIEF_DAYS * ONE_DAY_MS);
+  const ref = db.collection('patients').doc(patient.uid);
+  const [snap, profileSnap, logsSnap, notes, requests, seen] = await Promise.all([
+    ref.get(),
+    db.collection('users').doc(patient.uid).get(),
+    ref.collection('foodLogs').where('loggedAt', '>=', since.toISOString()).get(),
+    listNotesFor(db, nutritionistId, patient.uid, 1),
+    pendingRequests(db, nutritionistId),
+    lastSeen([patient.uid]).catch(() => null),
+  ]);
+  const data = snap.exists ? snap.data() || {} : {};
+  const profile = profileSnap.exists ? profileSnap.data() || {} : {};
+  const parts = [`Resumo de ${patient.name}, ${consultation ? `com consulta marcada para ${consultation.label}` : 'sem consulta marcada'}.`];
+  if (patient.objective) parts.push(`Objetivo: ${patient.objective}.`);
+
+  // Peso: a última medição, a mudança desde a anterior e quanto falta para a meta.
+  const measures = measurementsOf(data);
+  const last = measures.length ? measures[measures.length - 1] : null;
+  const previous = measures.length > 1 ? measures[measures.length - 2] : null;
+  const target = patient.targetWeight;
+  const current = last ? last.weight : patient.weight;
+  const change = last && previous ? Math.round((last.weight - previous.weight) * 10) / 10 : null;
+  if (current !== null) {
+    const gap = target === null ? null : Math.round(Math.abs(current - target) * 10) / 10;
+    parts.push(`${last ? `Peso atual ${spokenKilos(last.weight)}, de ${dateKeyLabel(last.date)}` : `Peso informado ${spokenKilos(current)}`}`
+      + (change === null || !previous ? '' : change === 0 ? `, igual à medição de ${dateKeyLabel(previous.date)}` : `; ${change > 0 ? 'subiu' : 'desceu'} ${spokenKilos(Math.abs(change))} desde ${dateKeyLabel(previous.date)}`)
+      + (gap === null ? '' : gap === 0 ? '; a meta foi atingida' : `; faltam ${spokenKilos(gap)} para a meta de ${spokenKilos(target as number)}`) + '.');
+  }
+
+  // O que ele registrou com a Ali nas duas últimas semanas.
+  const logs = logsSnap.docs
+    .map((doc) => doc.data() || {})
+    .filter((log) => typeof log.loggedAt === 'string')
+    .sort((a, b) => String(b.loggedAt).localeCompare(String(a.loggedAt)));
+  const mealDays = new Set(logs.map((log) => localDateKey(new Date(log.loggedAt), tz))).size;
+  parts.push(logs.length
+    ? `Nos últimos ${BRIEF_DAYS} dias, ${logs.length} ${logs.length === 1 ? 'refeição anotada' : 'refeições anotadas'} pela Ali, em ${mealDays} ${mealDays === 1 ? 'dia' : 'dias'}`
+      + (typeof logs[0].description === 'string' && logs[0].description.trim() ? `; a mais recente: ${clipSpoken(logs[0].description, 120)}.` : '.')
+    : `Nos últimos ${BRIEF_DAYS} dias, nenhuma refeição anotada pela Ali.`);
+
+  const water = waterToday(profile.waterIntake, now);
+  const mood = moodToday(profile.moodDiary, now);
+  const today = [water ? `${water} ml de água` : '', mood ? `humor ${MOOD_LABELS[mood]}` : ''].filter(Boolean);
+  if (today.length) parts.push(`Hoje: ${joinPt(today)}.`);
+
+  // Último acesso: só para quem tem login; sem a informação, a frase fica de fora.
+  let awayDays: number | null = null;
+  let neverSeen = false;
+  if (seen && seen.has(patient.uid)) {
+    const at = seen.get(patient.uid);
+    if (!at) {
+      neverSeen = true;
+      parts.push('Ainda não entrou no aplicativo.');
+    } else {
+      awayDays = Math.max(0, Math.floor((now.getTime() - at.getTime()) / ONE_DAY_MS));
+      parts.push(awayDays === 0 ? 'Abriu o aplicativo nas últimas 24 horas.' : awayDays === 1 ? 'Abriu o aplicativo ontem.' : `Está há ${awayDays} dias sem abrir o aplicativo.`);
+    }
+  }
+  parts.push(patient.plan === 'approved' ? 'Plano alimentar aprovado.' : patient.plan === 'draft' ? 'Plano em rascunho, esperando a sua aprovação.' : 'Ainda sem plano alimentar.');
+  const openRequest = requests.find((request) => request.patientUid === patient.uid) || null;
+  if (openRequest) parts.push(`Tem um pedido de consulta aberto, ${preference(openRequest.preferredDate)}.`);
+  const lastNote = notes[0] || null;
+  parts.push(lastNote ? `Última anotação de consulta, de ${noteDay(lastNote.createdAt, tz)}: ${withPeriod(clipSpoken(lastNote.text, 300))}` : 'Ainda não há anotações de consulta.');
+
+  return {
+    ok: true,
+    speech: parts.join(' '),
+    brief: {
+      patientName: patient.name, consultation: consultation ? consultation.label : null, objective: patient.objective || null,
+      weight: current, previousWeight: previous ? previous.weight : null, targetWeight: target, mealsLogged: logs.length, mealDays,
+      waterToday: water, moodToday: mood, awayDays, neverSeen, plan: patient.plan, openRequest: openRequest ? openRequest.preferredDate : null,
+      lastNote: lastNote ? { createdAt: lastNote.createdAt, text: clipSpoken(lastNote.text, 300) } : null,
+    },
+  };
+}
+
+/** A partir de quantos dias sem abrir o app o paciente entra na lista de atenção (o mesmo do resumo da semana). */
+const ATTENTION_AWAY_DAYS = 7;
+/** Quantos dias sem nenhum registro (refeição pela Ali ou peso) contam como paciente parado. */
+const ATTENTION_QUIET_DAYS = 14;
+/** Só olha a mudança de peso quando a última medição é recente. */
+const ATTENTION_WEIGHT_DAYS = 30;
+
+/**
+ * Pacientes que pedem atenção, do mais urgente ao menos urgente, com os motivos: pedido de consulta aberto,
+ * humor triste hoje, peso se afastando da meta, sumido do app, parado sem registros, plano esperando aprovação ou sem plano.
+ */
+export async function attentionList(db: Firestore, nutritionistId: string, lastSeen: LastSeenLookup, now = new Date()): Promise<ActionResult> {
+  const tz = (await loadSettings(db, nutritionistId)).timezone;
+  const snap = await db.collection('patients').where('nutritionistId', '==', nutritionistId).get();
+  const docs = snap.docs.filter((doc) => typeof doc.data()?.name === 'string' && doc.data().name.trim());
+  if (!docs.length) return { ok: true, speech: 'Você ainda não tem pacientes vinculados no NutriAli.', attention: [] };
+  const [requests, seen] = await Promise.all([pendingRequests(db, nutritionistId), lastSeen(docs.map((doc) => doc.id)).catch(() => null)]);
+  const quietSince = new Date(now.getTime() - ATTENTION_QUIET_DAYS * ONE_DAY_MS);
+  const quietKey = localDateKey(quietSince, tz);
+  const weightKey = localDateKey(new Date(now.getTime() - ATTENTION_WEIGHT_DAYS * ONE_DAY_MS), tz);
+
+  const rows = await Promise.all(docs.map(async (doc) => {
+    const d = doc.data() || {};
+    const reasons: { text: string; weight: number }[] = [];
+    const request = requests.find((item) => item.patientUid === doc.id);
+    if (request) reasons.push({ weight: 3, text: `pediu consulta, ${preference(request.preferredDate)}` });
+    const profile = await db.collection('users').doc(doc.id).get();
+    if (moodToday(profile.exists ? profile.data()?.moodDiary : null, now) === 'sad') reasons.push({ weight: 3, text: 'marcou hoje que não está bem' });
+
+    const measures = measurementsOf(d);
+    const last = measures.length ? measures[measures.length - 1] : null;
+    const previous = measures.length > 1 ? measures[measures.length - 2] : null;
+    const target = typeof d.targetWeight === 'number' ? d.targetWeight : null;
+    if (last && previous && target !== null && last.date >= weightKey) {
+      const drift = Math.abs(last.weight - target) - Math.abs(previous.weight - target);
+      if (drift >= 0.5) reasons.push({ weight: 2, text: `o peso ${last.weight > previous.weight ? 'subiu' : 'desceu'} ${spokenKilos(Math.round(Math.abs(last.weight - previous.weight) * 10) / 10)} na última medição, se afastando da meta` });
+    }
+
+    // Acesso e registros: só para quem tem login; sem a informação, esses motivos ficam de fora.
+    if (seen && seen.has(doc.id)) {
+      const at = seen.get(doc.id);
+      if (!at) reasons.push({ weight: 2, text: 'ainda não entrou no aplicativo' });
+      else {
+        const days = Math.floor((now.getTime() - at.getTime()) / ONE_DAY_MS);
+        if (days >= ATTENTION_AWAY_DAYS) reasons.push({ weight: 2, text: `está há ${days} dias sem abrir o aplicativo` });
+        const logs = await doc.ref.collection('foodLogs').where('loggedAt', '>=', quietSince.toISOString()).get();
+        if (!logs.docs.length && !(last && last.date >= quietKey)) reasons.push({ weight: 1, text: 'não registrou refeição nem peso nas últimas duas semanas' });
+      }
+    }
+    const status = d.currentPlan?.status;
+    if (status && status !== 'approved') reasons.push({ weight: 2, text: 'o plano está esperando a sua aprovação' });
+    else if (!status) reasons.push({ weight: 1, text: 'ainda não tem plano alimentar' });
+    reasons.sort((a, b) => b.weight - a.weight);
+    return { name: String(d.name).trim(), reasons, score: reasons.reduce((sum, reason) => sum + reason.weight, 0) };
+  }));
+
+  const flagged = rows.filter((row) => row.reasons.length).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'pt-BR'));
+  if (!flagged.length) return { ok: true, speech: 'Ninguém precisa de atenção especial agora.', attention: [] };
+  const spoken = flagged.slice(0, 5).map((row) => `${row.name}: ${joinPt(row.reasons.map((reason) => reason.text))}.`);
+  const rest = flagged.slice(5);
+  return {
+    ok: true,
+    speech: `${flagged.length === 1 ? 'Um paciente precisa' : `${flagged.length} pacientes precisam`} de atenção. ${spoken.join(' ')}`
+      + (rest.length ? ` Também: ${joinPt(rest.slice(0, 5).map((row) => row.name))}${rest.length > 5 ? ` e mais ${rest.length - 5}` : ''}.` : ''),
+    attention: flagged.slice(0, 20).map((row) => ({ name: row.name, reasons: row.reasons.map((reason) => reason.text) })),
   };
 }
 
