@@ -8,6 +8,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { getPatientById, updatePatient, deletePatient, Patient, Plan } from '@/lib/patients';
 import { ApiError, postJson } from '@/lib/api-client';
 import { AliFoodLogs } from '@/components/ali-food-logs';
+import { ConsultationNotes } from '@/components/consultation-notes';
 
 export default function PatientProfile() {
   const routeParams = useParams();
@@ -278,6 +279,7 @@ export default function PatientProfile() {
               )}
             </CardContent>
           </Card>
+          <ConsultationNotes patientId={patient.id} />
         </div>
 
         <div className="lg:col-span-2 space-y-6">
