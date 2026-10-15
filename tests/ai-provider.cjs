@@ -12,7 +12,7 @@ let gemini = async () => 'resposta do Gemini';
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const answer = (content) => reply(200, { choices: [{ message: { role: 'assistant', content } }] });
 
-const context = loadLib(['ai.ts', 'meal-photo.ts'], {
+const context = loadLib(['ai.ts', 'meal-photo.ts', 'plan-draft.ts'], {
   Response, AbortSignal, JSON,
   process: { env },
   console: { warn: () => {}, error: () => {} },
@@ -304,6 +304,22 @@ async function check(name, fn) { await fn(); count++; }
     const bare = run('mealPhotoPrompt(ask)');
     assert.match(bare, /ainda não informou o objetivo: não suponha um/);
     assert.match(bare, /ainda não tem plano alimentar aprovado/);
+  });
+
+  await check('rascunho de plano: o mesmo pedido da tela e da Ali, sem o nome do paciente, e só o que vier no formato certo', async () => {
+    const plan = { days: [{ name: 'Segunda a Sexta', meals: [{ time: '08:00', name: 'Café da Manhã', items: ['2 ovos mexidos', ''] }, { time: '10:00', name: 'Sem itens', items: [] }] }] };
+    reset({ GROQ_API_KEY: 'chave-de-teste' }, [answer(JSON.stringify(plan))]);
+    context.ctx = JSON.stringify({ idade: 34, objetivo: 'Emagrecimento', pesoAtual: 72.4, altura: 165, pesoMeta: 65 });
+    const draft = await run("generatePlanDraft(ctx, 'Sem lactose, 1800 kcal')");
+    assert.deepEqual(JSON.parse(JSON.stringify(draft)), { days: [{ name: 'Segunda a Sexta', meals: [{ time: '08:00', name: 'Café da Manhã', items: ['2 ovos mexidos'] }] }] });
+    const [call] = calls;
+    assert.match(call.body.messages[0].content, /Responda SOMENTE com um objeto JSON válido/);
+    assert.equal(call.body.messages[1].content, `Contexto do paciente: ${context.ctx}
+Instruções adicionais do nutricionista: Sem lactose, 1800 kcal`);
+    assert.equal(call.body.max_completion_tokens, 4000);
+    assert.match(run("planRequest('{}', '').prompt"), /Instruções adicionais do nutricionista: nenhuma$/);
+    reset({ GROQ_API_KEY: 'chave-de-teste' }, [answer('{"days": []}')]);
+    await failsWith(run("generatePlanDraft(ctx, '')"), 502, /não deu para aproveitar/);
   });
 
   console.log(`${count} verificações da camada de IA (Groq) passaram. Nenhuma IA foi chamada.`);

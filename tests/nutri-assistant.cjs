@@ -451,6 +451,99 @@ context.now = NOW;
     assert.match((await run("attentionList(db, 'nutri-vazia', lastSeen, now)")).speech, /ainda não tem pacientes/);
   });
 
+  // ───────────── Fase 3 ─────────────
+
+  const tasks = [];
+  context.later = (task) => { tasks.push(task); };
+  const aiCalls = [];
+  const samplePlan = { days: [
+    { name: 'Segunda a sexta', meals: [{ time: '07:30', name: 'Café da manhã', items: ['Pão integral', 'Ovo mexido', 'Café'] }, { time: '12:30', name: 'Almoço', items: ['Arroz', 'Feijão', 'Frango'] }] },
+    { name: 'Fim de semana', meals: [{ time: '09:00', name: 'Café', items: ['Tapioca'] }] },
+  ] };
+  context.generate = async (ctx, instructions) => { aiCalls.push([ctx, instructions]); return samplePlan; };
+
+  await check('rascunho de plano por voz: responde na hora, monta depois e não manda o nome do paciente para a IA', async () => {
+    context.input = { patientName: 'Bia Costa', text: ' Sem lactose, 1800 kcal, 5 refeições ' };
+    const started = await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)");
+    assert.equal(started.speech, 'Comecei a montar o rascunho do plano de Bia Costa, com as suas orientações. Leva cerca de um minuto. Depois é só me pedir para ler o rascunho, ou abrir o prontuário no aplicativo para revisar e aprovar.');
+    assert.equal(store.get('patients/p-bia').planDraftJob.status, 'running');
+    assert.deepEqual([aiCalls.length, tasks.length], [0, 1]); // a IA só trabalha depois da resposta
+    assert.equal((await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)")).status, 409); // já está montando
+    context.name = 'Bia Costa';
+    assert.match((await run("planDraft(db, 'nutri-1', name, now)")).speech, /^Ainda estou montando o rascunho de Bia Costa/);
+
+    await tasks.shift()();
+    assert.deepEqual(aiCalls[0], [JSON.stringify({ idade: null, objetivo: null, pesoAtual: null, altura: null, pesoMeta: null }), 'Sem lactose, 1800 kcal, 5 refeições']);
+    const bia = store.get('patients/p-bia');
+    assert.deepEqual([bia.currentPlan.status, bia.currentPlan.source, bia.currentPlan.instructions, bia.currentPlan.days.length, bia.planDraftJob.status],
+      ['draft', 'ali', 'Sem lactose, 1800 kcal, 5 refeições', 2, 'done']);
+    assert.equal(bia.pendingPlan, undefined);
+    const read = await run("planDraft(db, 'nutri-1', name, now)");
+    assert.equal(read.speech, 'Rascunho do plano de Bia Costa, feito pela Ali, esperando a sua aprovação. Segunda a sexta: Café da manhã às 07:30, Pão integral, Ovo mexido e Café; Almoço às 12:30, Arroz, Feijão e Frango. Também tem Fim de semana. Para aprovar ou mudar, abra o prontuário no aplicativo.');
+    assert.equal(read.plan.days.length, 2);
+
+    // Já existe rascunho: a Ali pergunta antes de fazer outro; com a confirmação, refaz no lugar.
+    const asks = await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)");
+    assert.equal(asks.status, 409);
+    assert.match(asks.speech, /já tem um rascunho de plano esperando a sua aprovação\. Quer que eu faça um novo no lugar dele\?$/);
+    context.input = { patientName: 'Bia Costa', force: true };
+    assert.equal((await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)")).speech.includes('com as suas orientações'), false);
+    await tasks.shift()();
+    assert.equal(store.get('patients/p-bia').currentPlan.instructions, undefined);
+  });
+
+  await check('rascunho para quem já tem plano aprovado: fica ao lado, e o plano atual continua valendo', async () => {
+    const before = store.get('patients/p-ana').currentPlan;
+    context.input = { patientName: 'Ana Souza', text: 'Mais proteína no café' };
+    const started = await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)");
+    assert.match(started.speech, / O plano atual continua valendo até você aprovar o novo\.$/);
+    await tasks.shift()();
+    assert.deepEqual(JSON.parse(aiCalls[aiCalls.length - 1][0]), { idade: null, objetivo: 'Emagrecimento', pesoAtual: 71.5, altura: null, pesoMeta: 65 });
+    const ana = store.get('patients/p-ana');
+    assert.deepEqual(ana.currentPlan, before);
+    assert.deepEqual([ana.pendingPlan.status, ana.pendingPlan.source], ['draft', 'ali']);
+    context.name = 'Ana Souza';
+    const read = await run("planDraft(db, 'nutri-1', name, now)");
+    assert.match(read.speech, /^Rascunho do plano de Ana Souza, feito pela Ali, esperando a sua aprovação\./);
+    assert.equal(read.plan.replacesApproved, true);
+    assert.match((await run("patientSummary(db, 'nutri-1', name)")).speech, /plano aprovado, com um rascunho novo esperando a sua aprovação/);
+    assert.ok((await run("attentionList(db, 'nutri-1', lastSeen, now)")).attention.find((row) => row.name === 'Ana Souza').reasons.includes('o plano está esperando a sua aprovação'));
+  });
+
+  await check('rascunho que falhou ou ficou parado: a Ali conta e oferece tentar de novo; pedido mais novo vence', async () => {
+    context.failAi = async () => { const error = new Error('A inteligência artificial está indisponível no momento. Tente de novo em alguns minutos.'); error.status = 503; throw error; };
+    context.input = { patientName: 'João Pereira' };
+    await run("createPlanDraft(db, 'nutri-1', input, failAi, later, now)");
+    await tasks.shift()();
+    assert.equal(store.get('patients/p-joao').planDraftJob.status, 'failed');
+    assert.equal(store.get('patients/p-joao').currentPlan, undefined);
+    context.name = 'João Pereira';
+    assert.equal((await run("planDraft(db, 'nutri-1', name, now)")).speech,
+      'Não consegui montar o último rascunho de João Pereira. A inteligência artificial está indisponível no momento. Tente de novo em alguns minutos. Quer que eu tente de novo?');
+    // Erro sem mensagem própria: sem detalhes.
+    context.crash = async () => { throw new Error('detalhe interno'); };
+    await run("createPlanDraft(db, 'nutri-1', input, crash, later, now)");
+    await tasks.shift()();
+    assert.equal((await run("planDraft(db, 'nutri-1', name, now)")).speech, 'Não consegui montar o último rascunho de João Pereira. Quer que eu tente de novo?');
+
+    // Pedido parado há mais de 3 minutos conta como falha e não impede um novo.
+    store.set('patients/p-joao', { ...store.get('patients/p-joao'), planDraftJob: { id: 'velho', status: 'running', startedAt: '2026-10-13T12:50:00.000Z' } });
+    assert.match((await run("planDraft(db, 'nutri-1', name, now)")).speech, /^Não consegui montar o último rascunho/);
+    await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)");
+    // Um pedido mais novo começou antes deste terminar: o resultado antigo não é gravado.
+    store.set('patients/p-joao', { ...store.get('patients/p-joao'), planDraftJob: { id: 'mais-novo', status: 'running', startedAt: NOW.toISOString() } });
+    await tasks.shift()();
+    assert.equal(store.get('patients/p-joao').currentPlan, undefined);
+
+    context.input = { patientName: 'João Pereira', text: 'x'.repeat(1001) };
+    assert.equal((await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)")).status, 422);
+    context.input = { patientName: 'Marcos' };
+    assert.equal((await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)")).status, 404);
+    context.name = 'Paciente Inexistente';
+    assert.equal((await run("planDraft(db, 'nutri-1', name, now)")).status, 404);
+    assert.equal(tasks.length, 0);
+  });
+
   await check('sem Google conectado, a Ali explica onde conectar', async () => {
     store.set('users/nutri-3', { role: 'nutritionist', displayName: 'Sem Google' });
     store.set('patients/p-x', { name: 'Paciente X', email: 'x@exemplo.com', nutritionistId: 'nutri-3' });

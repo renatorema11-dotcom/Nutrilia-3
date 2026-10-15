@@ -46,11 +46,15 @@ async function test(name, options, status, inspect = () => {}) {
     consultationNotes: fixed('consultationNotes', { notes: [] }),
     declineAppointmentRequest: fixed('declineAppointmentRequest'),
     addConsultationNote: fixed('addConsultationNote', { note: { patientName: 'Ana' } }),
+    createPlanDraft: fixed('createPlanDraft', { plan: { patientName: 'Ana', status: 'running' } }),
+    planDraft: fixed('planDraft', { plan: { patientName: 'Ana', status: 'draft' } }),
     ...options.assistant,
   };
   const env = { AGENT_API_SECRET: secret, FIREBASE_SERVICE_ACCOUNT_KEY: JSON.stringify({ project_id: cfg.projectId }), ...options.env };
   const context = vm.createContext({
     Buffer, Request, Response, console: { error: () => {} }, process: { env }, timingSafeEqual, firebaseConfig: cfg, assistant,
+    // O rascunho do plano usa a IA (lib/plan-draft.ts) e o "after" do Next; aqui os dois são de mentira.
+    generatePlanDraft: async () => ({ days: [] }), after: (task) => events.push(['after', typeof task]),
     getApps: () => [], cert: (a) => a, initializeApp: () => ({ name: 'test' }),
     getAuth: () => ({ verifyIdToken: async (token, revocation) => {
       events.push(['verify', token, revocation]);
@@ -98,7 +102,7 @@ async function test(name, options, status, inspect = () => {}) {
   await test('Payload em lista', { body: { action: 'list_patients', payload: [] } }, 400);
   await test('Ação fora da lista', { body: { action: 'delete_patient' } }, 400);
   await test('Ação de paciente não vale aqui', { body: { action: 'log_meal', confirmed: true } }, 400);
-  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note']) {
+  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft']) {
     await test(`Exige confirmação: ${action}`, { body: { action, payload: {} } }, 422);
     await test(`Confirmação em texto não vale: ${action}`, { body: { action, confirmed: 'true', payload: {} } }, 422);
   }
@@ -170,6 +174,19 @@ async function test(name, options, status, inspect = () => {}) {
   await test('Encerrar pedido de consulta confirmado chega à função certa', { body: { action: 'decline_appointment_request', confirmed: true, payload: { patientName: 'Ana', text: 'Sem horário esta semana.' } } }, 200, (_, __, acted) => {
     assert.equal(acted[0][0], 'declineAppointmentRequest');
     assert.equal(acted[0][2].patientName, 'Ana');
+  });
+  await test('Rascunho de plano confirmado recebe o gerador da IA e quem roda depois da resposta', { body: { action: 'create_plan_draft', confirmed: true, payload: { patientName: 'Ana', text: 'Sem lactose' } } }, 200, (events, json, acted) => {
+    assert.deepEqual(acted[0].slice(0, 2), ['createPlanDraft', 'nutri-A']);
+    assert.equal(acted[0][2].text, 'Sem lactose');
+    assert.equal(typeof acted[0][3], 'function');
+    assert.equal(typeof acted[0][4], 'function');
+    acted[0][4](async () => {});
+    assert.ok(events.some((e) => e[0] === 'after' && e[1] === 'function'));
+    assert.equal(json.plan.status, 'running');
+    assert.ok(!JSON.stringify(events.find((e) => e[0] === 'audit')[2]).includes('Sem lactose'));
+  });
+  await test('Ler o rascunho é leitura e recebe só o nome', { body: { action: 'get_plan_draft', payload: { patientName: 'Ana', text: 'x' } } }, 200, (_, __, acted) => {
+    assert.deepEqual(acted[0], ['planDraft', 'nutri-A', 'Ana']);
   });
   await test('Recusa da ação chega à Ali com o status certo', { reachesAction: true, assistant: { createEvent: async () => ({ ok: false, status: 409, speech: 'Você já tem um compromisso nesse horário.' }) },
     body: { action: 'create_event', confirmed: true, payload: { title: 'Reunião' } } }, 409, (_, json) => {
