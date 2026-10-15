@@ -159,6 +159,21 @@ export default function PatientProfile() {
     setShowAddMeasure(false);
   };
 
+  // Rascunho novo feito pela Ali ao lado de um plano aprovado: aprovar troca o plano do paciente; o anterior vai para o histórico.
+  const handleApprovePending = async () => {
+    if (!patient.pendingPlan) return;
+    const approved: Plan = { ...patient.pendingPlan, status: 'approved' };
+    const pastPlans = patient.currentPlan ? [...(patient.pastPlans || []), patient.currentPlan] : (patient.pastPlans || []);
+    await updatePatient(patient.id, { currentPlan: approved, pendingPlan: null, pastPlans });
+    setPatient({ ...patient, currentPlan: approved, pendingPlan: null, pastPlans });
+    alert('Plano novo aprovado! Ele substituiu o plano anterior para o paciente.');
+  };
+
+  const handleDiscardPending = async () => {
+    await updatePatient(patient.id, { pendingPlan: null });
+    setPatient({ ...patient, pendingPlan: null });
+  };
+
   const handleDeletePatient = async () => {
     if (window.confirm(`Tem certeza que deseja remover ${patient.name}?`)) {
       await deletePatient(patient.id);
@@ -168,6 +183,11 @@ export default function PatientProfile() {
 
   const planStatus = patient.currentPlan?.status || (draftPlan ? 'draft' : 'none');
   const currentPlan = patient.currentPlan || draftPlan;
+  // Rascunho pedido à Ali: ela monta em segundo plano (cerca de um minuto); a página avisa enquanto isso.
+  const job = patient.planDraftJob;
+  const jobAge = job ? Date.now() - Date.parse(job.startedAt) : Infinity;
+  const jobRunning = job?.status === 'running' && jobAge < 3 * 60_000;
+  const jobFailed = !!job && (job.status === 'failed' || (job.status === 'running' && !jobRunning)) && jobAge < 86_400_000 && !patient.pendingPlan && planStatus !== 'draft';
 
   return (
     <div className="space-y-6">
@@ -288,6 +308,53 @@ export default function PatientProfile() {
               <CardTitle>Plano Alimentar</CardTitle>
             </CardHeader>
             <CardContent>
+              {jobRunning && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm text-teal-800">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  A Ali está montando um rascunho de plano. Recarregue a página em um minuto.
+                </div>
+              )}
+              {jobFailed && (
+                <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  A Ali não conseguiu montar o último rascunho pedido{job?.reason ? `: ${job.reason}` : '.'} Peça de novo para a Ali ou gere o rascunho aqui.
+                </div>
+              )}
+              {patient.pendingPlan && (
+                <div className="mb-6 space-y-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                      <h4 className="font-medium text-amber-900">Novo rascunho montado pela Ali</h4>
+                      <p className="text-sm text-amber-700">
+                        O plano atual continua valendo para o paciente até você aprovar este.
+                        {patient.pendingPlan.instructions ? ` Orientações: ${patient.pendingPlan.instructions}` : ''}
+                      </p>
+                    </div>
+                    <Button onClick={handleApprovePending} className="bg-amber-600 hover:bg-amber-700 text-white border-0 flex-shrink-0">
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Aprovar e substituir
+                    </Button>
+                  </div>
+                  {patient.pendingPlan.days?.map((day, idx) => (
+                    <div key={idx} className="space-y-3">
+                      <h4 className="font-bold text-slate-800 border-b border-amber-200 pb-2">{day.name}</h4>
+                      {day.meals?.map((meal, mIdx) => (
+                        <div key={mIdx} className="bg-white p-3 rounded-lg flex gap-4 items-start border border-amber-100">
+                          <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-slate-700 flex items-center shrink-0 border border-slate-200">
+                            <Clock className="h-3.5 w-3.5 mr-1 text-amber-600" /> {meal.time}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-sm text-slate-900">{meal.name}</p>
+                            <p className="text-sm text-slate-600 mt-1">{Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleDiscardPending}>
+                    Descartar rascunho novo
+                  </Button>
+                </div>
+              )}
               {planStatus === 'none' && (
                 <div className="bg-emerald-50 rounded-lg p-6 border border-emerald-100 space-y-4">
                   <h3 className="font-medium text-emerald-900 flex items-center">
@@ -344,8 +411,11 @@ export default function PatientProfile() {
                 <div className="space-y-6">
                   <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                      <h4 className="font-medium text-amber-900">Rascunho do Plano Gerado</h4>
-                      <p className="text-sm text-amber-700">Apenas o nutricionista vê este rascunho. Clique em aprovar para disponibilizar ao paciente.</p>
+                      <h4 className="font-medium text-amber-900">{draftPlan.source === 'ali' ? 'Rascunho do plano montado pela Ali' : 'Rascunho do Plano Gerado'}</h4>
+                      <p className="text-sm text-amber-700">
+                        Apenas o nutricionista vê este rascunho. Clique em aprovar para disponibilizar ao paciente.
+                        {draftPlan.instructions ? ` Orientações: ${draftPlan.instructions}` : ''}
+                      </p>
                     </div>
                     <Button onClick={handleApprovePlan} className="bg-amber-600 hover:bg-amber-700 text-white border-0 flex-shrink-0">
                       <CheckCircle2 className="w-4 h-4 mr-2" />
