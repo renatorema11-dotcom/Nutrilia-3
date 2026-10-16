@@ -18,6 +18,7 @@ import { MoodDiary } from '@/components/mood-diary';
 import { WeightProgress } from '@/components/weight-progress';
 import { FoodDiary } from '@/components/food-diary';
 import { Achievements } from '@/components/achievements';
+import { EmailNoticesToggle, NutriMessagesBanner } from '@/components/nutri-notices';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
 import { ApiError, postJson } from '@/lib/api-client';
@@ -290,9 +291,12 @@ export default function PatientDashboard() {
       </div>
 
       {activeTab === 'overview' ? (
-        renderOverview()
+        <>
+          <NutriMessagesBanner />
+          {renderOverview()}
+        </>
       ) : (
-        <div className="pt-2">
+        <div className="pt-2 space-y-6">
           <PatientSettings 
             patientData={patientData} 
             onSave={(newData) => {
@@ -301,6 +305,7 @@ export default function PatientDashboard() {
               window.dispatchEvent(new Event('storage'));
             }} 
           />
+          <EmailNoticesToggle />
         </div>
       )}
     </div>
