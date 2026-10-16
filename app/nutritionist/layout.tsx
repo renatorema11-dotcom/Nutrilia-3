@@ -8,6 +8,7 @@ import { AppShell, AppLoading, type NavItem } from '@/components/app-shell';
 import { NutritionistAliAssistant } from '@/components/nutritionist-ali-assistant';
 import { NutritionistPending } from '@/components/nutritionist-pending';
 import { NutritionistTour } from '@/components/nutritionist-tour';
+import { ConsentGate } from '@/components/consent-gate';
 import { authFetch } from '@/lib/api-client';
 
 const navigation: NavItem[] = [
@@ -25,6 +26,7 @@ export default function NutritionistLayout({ children }: { children: React.React
   const pathname = usePathname();
   // Só o responsável pelo NutriAli vê o item "Aprovações" (quem decide isso é o servidor).
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null);
+  const [pendingDeletions, setPendingDeletions] = useState(0);
   const active = ready && role === 'nutritionist' && approval === 'approved' && !!user;
 
   useEffect(() => {
@@ -33,6 +35,10 @@ export default function NutritionistLayout({ children }: { children: React.React
     authFetch('/api/admin/approvals?resumo=1', { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => { if (current && data?.admin === true) setPendingApprovals(typeof data.pending === 'number' ? data.pending : 0); })
+      .catch(() => {});
+    authFetch('/api/admin/deletions?resumo=1', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (current && data?.admin === true && typeof data.pending === 'number') setPendingDeletions(data.pending); })
       .catch(() => {});
     return () => { current = false; };
   }, [active]);
@@ -52,6 +58,7 @@ export default function NutritionistLayout({ children }: { children: React.React
   const items: NavItem[] = pendingApprovals === null ? navigation : [
     ...navigation,
     { name: pendingApprovals ? `Aprovações (${pendingApprovals})` : 'Aprovações', shortName: 'Aprovações', href: '/admin/aprovacoes', icon: ShieldCheck },
+    ...(pendingDeletions ? [{ name: `Exclusões (${pendingDeletions})`, shortName: 'Exclusões', href: '/admin/exclusoes', icon: ShieldCheck }] : []),
   ];
 
   // Nas telas com campo de digitação, o botão flutuante cobriria os campos no celular.
@@ -67,6 +74,7 @@ export default function NutritionistLayout({ children }: { children: React.React
         onLogout={logout}
       >
         {children}
+        {user && <ConsentGate uid={user.uid} role="nutritionist" onLogout={logout} />}
       </AppShell>
 
       {/* Tour de boas-vindas: uma vez, na primeira entrada no painel. */}
