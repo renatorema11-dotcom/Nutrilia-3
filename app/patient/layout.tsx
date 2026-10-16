@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { LayoutDashboard, FileText, Activity, MessageSquare, User, Stethoscope } from 'lucide-react';
 import { AppShell, AppLoading, type NavItem } from '@/components/app-shell';
 import { postJson } from '@/lib/api-client';
+import { ConsentGate } from '@/components/consent-gate';
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', shortName: 'Início', href: '/patient', icon: LayoutDashboard, inBottomBar: true },
@@ -65,6 +66,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       onLogout={logout}
     >
       {children}
+      {user && <ConsentGate uid={user.uid} role="patient" onLogout={logout} />}
     </AppShell>
   );
 }
