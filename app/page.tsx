@@ -7,26 +7,27 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-transparent flex flex-col relative z-10 text-slate-800">
       {/* Header */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-8 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-[#4c8466] rounded-xl flex items-center justify-center text-white shadow-lg">
-            <Apple className="h-7 w-7" />
+      <header className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-8 flex justify-between items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#4c8466] rounded-xl flex items-center justify-center text-white shadow-lg shrink-0">
+            <Apple className="h-6 w-6 sm:h-7 sm:w-7" />
           </div>
-          <span className="text-2xl font-bold tracking-tight text-[#276e58]">NutriAli</span>
+          <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#276e58]">NutriAli</span>
         </div>
-        <div className="flex items-center gap-3">
-          <LanguageSelector />
+        <div className="flex items-center gap-2 sm:gap-3">
+          <LanguageSelector compact />
           <Link href="/login">
-            <Button variant="ghost" className="font-bold">Entrar</Button>
+            <Button variant="ghost" className="font-bold px-3 sm:px-4">Entrar</Button>
           </Link>
-          <Link href="/register">
+          {/* No celular o convite para testar fica no botão grande logo abaixo. */}
+          <Link href="/register" className="hidden sm:block">
             <Button className="font-bold shadow-teal-600/30">Testar Grátis</Button>
           </Link>
         </div>
       </header>
 
       {/* Hero */}
-      <main className="flex-1 flex flex-col items-center text-center px-6 py-16 max-w-5xl mx-auto">
+      <main className="flex-1 flex flex-col items-center text-center px-4 sm:px-6 py-10 sm:py-16 max-w-5xl mx-auto">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card border border-white/60 mb-8 text-sm font-semibold text-teal-800 shadow-sm">
           <Mic className="w-4 h-4" />
           <span>Assistente de voz com IA para consultórios de nutrição</span>
@@ -34,7 +35,7 @@ export default function Home() {
 
         <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 leading-tight">
           Seu acompanhamento nutricional{' '}
-          <span className="text-teal-700 relative whitespace-nowrap">
+          <span className="text-teal-700 relative sm:whitespace-nowrap">
             com voz própria
             <svg className="absolute -bottom-2 left-0 w-full h-3 text-teal-200 -z-10" viewBox="0 0 100 10" preserveAspectRatio="none">
               <path d="M0,5 Q50,0 100,5" stroke="currentColor" strokeWidth="8" fill="none" />
@@ -42,7 +43,7 @@ export default function Home() {
           </span>
         </h1>
 
-        <p className="text-xl text-slate-600 mb-10 max-w-2xl leading-relaxed">
+        <p className="text-lg sm:text-xl text-slate-600 mb-10 max-w-2xl leading-relaxed">
           O NutriAli dá ao seu paciente um assistente de voz, o Ali, disponível 24h para tirar
           dúvidas da dieta — e a você, um painel com planos gerados por IA e a evolução de cada
           paciente em gráficos claros.
@@ -220,7 +221,7 @@ export default function Home() {
             </div>
             <span className="font-bold text-[#276e58]">NutriAli</span>
           </div>
-          <div className="flex items-center gap-6 text-sm text-slate-500">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
             <a href="#como-funciona" className="hover:text-slate-700">Como funciona</a>
             <a href="#preco" className="hover:text-slate-700">Preço</a>
             <a href="#faq" className="hover:text-slate-700">Dúvidas</a>

@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, Button, Input } from '@/components/ui';
-import { Activity, ArrowRight, User } from 'lucide-react';
+import { Activity, ArrowRight } from 'lucide-react';
 import { motion, Variants } from 'motion/react';
 import { useAuth } from '@/components/auth-provider';
-import { updateUserData } from '@/lib/db';
+import { ApiError, postJson } from '@/lib/api-client';
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -25,7 +25,7 @@ const itemVariants: Variants = {
 
 export default function PatientOnboarding() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, ready } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     age: '',
@@ -34,6 +34,17 @@ export default function PatientOnboarding() {
     objective: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    // A triagem é gravada no prontuário de quem está logado; sem login, volta para a entrada.
+    if (ready && !user) router.replace('/login');
+  }, [ready, user, router]);
+
+  useEffect(() => {
+    // Sugere o nome já informado no cadastro; a pessoa pode corrigir.
+    if (user?.displayName) setFormData((prev) => (prev.name ? prev : { ...prev, name: user.displayName || '' }));
+  }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { id, value } = e.target;
@@ -66,14 +77,18 @@ export default function PatientOnboarding() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
-    
-    if (user) {
-      await updateUserData(user.uid, { patientData: formData });
-    } else {
-      localStorage.setItem('mockPatientData', JSON.stringify(formData));
+    if (!validate() || !user || saving) return;
+
+    setSaving(true);
+    try {
+      // O servidor confere e grava no prontuário, que é o que a nutricionista e a Ali enxergam.
+      await postJson('/api/patient/profile', formData);
+      router.push('/patient');
+    } catch (error) {
+      setErrors({ form: error instanceof ApiError ? error.message : 'Não foi possível salvar agora. Tente de novo em instantes.' });
+    } finally {
+      setSaving(false);
     }
-    router.push('/patient');
   };
 
   return (
@@ -171,9 +186,13 @@ export default function PatientOnboarding() {
                   </motion.div>
                 </div>
 
+                {errors.form && (
+                  <p role="alert" className="text-sm text-red-600 font-medium">{errors.form}</p>
+                )}
+
                 <motion.div variants={itemVariants}>
-                  <Button type="submit" className="w-full mt-6 flex items-center justify-center gap-2">
-                    Concluir Triagem
+                  <Button type="submit" disabled={saving} className="w-full mt-6 flex items-center justify-center gap-2">
+                    {saving ? 'Salvando...' : 'Concluir Triagem'}
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </motion.div>

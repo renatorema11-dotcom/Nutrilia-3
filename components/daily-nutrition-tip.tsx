@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Lightbulb, Loader2 } from 'lucide-react';
 import Markdown from 'react-markdown';
+import { ApiError, postJson } from '@/lib/api-client';
 
 export function DailyNutritionTip({ objective }: { objective: string }) {
   const [tip, setTip] = useState('');
+  const [failure, setFailure] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -21,19 +23,15 @@ export function DailyNutritionTip({ objective }: { objective: string }) {
       }
 
       try {
-        const res = await fetch('/api/gemini/generate-daily-tip', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ objective })
-        });
-        const data = await res.json();
+        const data = await postJson('/api/gemini/generate-daily-tip', { objective });
         if (data.text) {
           setTip(data.text);
           sessionStorage.setItem(`daily_tip_${today}`, data.text);
         }
       } catch (error) {
         console.error(error);
-        setTip("Mantenha o foco no seu objetivo e não esqueça de se hidratar!");
+        // Sem dica pronta no lugar: se a IA não respondeu, a tela diz isso.
+        setFailure(error instanceof ApiError ? error.message : 'Não foi possível gerar a dica de hoje.');
       } finally {
         setIsLoading(false);
       }
@@ -56,6 +54,10 @@ export function DailyNutritionTip({ objective }: { objective: string }) {
             <Loader2 className="w-4 h-4 animate-spin" />
             Curando dica para {objective}...
           </div>
+        ) : !tip ? (
+          <p role="status" className="text-amber-800/80 text-sm">
+            Sem dica por enquanto. {failure || 'Volte mais tarde.'}
+          </p>
         ) : (
           <div className="text-amber-900 text-sm font-medium leading-relaxed markdown-body">
              <Markdown>{tip}</Markdown>

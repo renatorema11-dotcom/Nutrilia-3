@@ -1,11 +1,14 @@
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db, createPatientAuthUser, auth } from './firebase';
+import { authFetch } from './api-client';
 
 export interface Measurement {
   date: string;
   weight: number;
   bodyFat?: number;
   height?: number;
+  /** 'patient' quando o próprio paciente informou o peso (triagem ou configurações). */
+  source?: string;
 }
 
 export interface Meal {
@@ -24,12 +27,30 @@ export interface Plan {
   status: 'draft' | 'approved';
   createdDate: string;
   days?: PlanDay[];
+  /** 'ali' quando o rascunho foi montado pela Ali da nutricionista, por voz. */
+  source?: string;
+  /** Orientações que a nutricionista deu para o rascunho. */
+  instructions?: string;
+}
+
+/** Andamento do rascunho pedido à Ali (a IA monta em segundo plano). */
+export interface PlanDraftJob {
+  id: string;
+  status: 'running' | 'done' | 'failed';
+  startedAt: string;
+  finishedAt?: string;
+  reason?: string;
 }
 
 export interface Patient {
   id: string;
   /** UID da nutricionista responsável — base do isolamento multi-tenant. */
   nutritionistId: string;
+  nutritionistName?: string;
+  nutritionistEmail?: string;
+  nutritionistCRN?: string;
+  nutritionistPhoto?: string;
+  nutritionistSpecialty?: string;
   name: string;
   email: string;
   age: number;
@@ -43,9 +64,69 @@ export interface Patient {
   nextAppointment?: string;
   measurements: Measurement[];
   currentPlan?: Plan | null;
+  /** Rascunho novo feito pela Ali enquanto o plano aprovado continua valendo; vira o plano atual quando aprovado. */
+  pendingPlan?: Plan | null;
+  planDraftJob?: PlanDraftJob;
+  /** Quando a nutricionista aprovou o plano atual; o servidor avisa o paciente por e-mail. */
+  planApprovedAt?: string;
   pastPlans?: Plan[];
   /** Senha temporária gerada no cadastro — NÃO é persistida no Firestore. Exibida uma única vez ao nutricionista. */
   tempPassword?: string;
+}
+
+export interface RegisteredNutritionist {
+  id: string;
+  displayName: string;
+  email: string;
+  crn?: string;
+  specialty?: string;
+  photoURL?: string;
+  phone?: string;
+  bio?: string;
+}
+
+export async function getRegisteredNutritionists(): Promise<RegisteredNutritionist[]> {
+  try {
+    // A lista vem do servidor, só com o perfil profissional: o navegador não lê o cadastro de outras pessoas.
+    const res = await authFetch('/api/nutritionists', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.nutritionists) ? data.nutritionists as RegisteredNutritionist[] : [];
+  } catch (err) {
+    console.error('Erro ao buscar nutricionistas:', err);
+    return [];
+  }
+}
+
+export async function linkNutritionistToPatient(
+  patientUid: string,
+  nutritionist: RegisteredNutritionist,
+  profile: { name?: string; email?: string } = {},
+): Promise<void> {
+  const updates = {
+    nutritionistId: nutritionist.id,
+    nutritionistName: nutritionist.displayName,
+    nutritionistEmail: nutritionist.email,
+    nutritionistCRN: nutritionist.crn || '',
+    nutritionistPhoto: nutritionist.photoURL || '',
+    nutritionistSpecialty: nutritionist.specialty || '',
+  };
+  const patientRef = doc(db, 'patients', patientUid);
+  // Quem entrou pelo Google ainda não tem prontuário: ele nasce aqui, já com nome e e-mail,
+  // para a nutricionista escolhida enxergar o paciente na lista dela.
+  const existing = await getDoc(patientRef);
+  const base = existing.exists() ? {} : {
+    id: patientUid,
+    name: profile.name || 'Paciente',
+    email: profile.email || '',
+    createdAt: new Date().toISOString(),
+    measurements: [],
+  };
+  await setDoc(patientRef, removeUndefined({ ...base, ...updates }), { merge: true });
+  await setDoc(doc(db, 'users', patientUid), removeUndefined({
+    nutritionistId: nutritionist.id,
+    nutritionistName: nutritionist.displayName,
+  }), { merge: true });
 }
 
 /**

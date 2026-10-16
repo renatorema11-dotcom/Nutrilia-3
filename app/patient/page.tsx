@@ -13,14 +13,15 @@ import { DailyNutritionTip } from '@/components/daily-nutrition-tip';
 import { PatientSettings } from '@/components/patient-settings';
 import { GuidedTour } from '@/components/guided-tour';
 import { AppointmentScheduler } from '@/components/appointment-scheduler';
-import { MacronutrientsChart } from '@/components/macronutrients-chart';
 import { WaterTracker } from '@/components/water-tracker';
 import { MoodDiary } from '@/components/mood-diary';
 import { WeightProgress } from '@/components/weight-progress';
 import { FoodDiary } from '@/components/food-diary';
 import { Achievements } from '@/components/achievements';
+import { EmailNoticesToggle, NutriMessagesBanner } from '@/components/nutri-notices';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { ApiError, postJson } from '@/lib/api-client';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
@@ -50,84 +51,41 @@ export default function PatientDashboard() {
     };
 
     async function loadData() {
-      if (user) {
-        const data = await getUserData(user.uid);
-        if (data?.savedPlans && isValidPlanFormat(data.savedPlans) && data.savedPlans.length > 0) {
-          setHasPlan(true);
-        }
-        if (data?.patientData) {
-          setPatientData(data.patientData);
-        } else {
-          setPatientData({
-            name: user.displayName || 'Paciente',
-            age: 30,
-            weight: 70,
-            height: 168,
-            initialWeight: 70,
-            targetWeight: 65,
-            objective: 'Saúde e Bem-Estar'
-          });
-        }
+      // Enquanto a sessão não chega, o painel fica em branco: nada de paciente de exemplo no lugar.
+      if (!user) return;
+      const data = await getUserData(user.uid);
+      if (data?.savedPlans && isValidPlanFormat(data.savedPlans) && data.savedPlans.length > 0) {
+        setHasPlan(true);
+      }
+      const patient = data?.patientData;
+      if (patient?.age && patient?.weight && patient?.height) {
+        setPatientData({ ...patient, name: patient.name || user.displayName || 'Paciente', objective: patient.objective || 'Saúde e Bem-estar' });
       } else {
-        const savedPlans = localStorage.getItem('mockSavedPlans');
-        if (savedPlans && isValidPlanFormat(savedPlans)) {
-          try {
-            const parsedPlans = JSON.parse(savedPlans);
-            if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
-              setHasPlan(true);
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        }
-
-        const saved = localStorage.getItem('mockPatientData');
-        if (saved) {
-          try {
-            setPatientData(JSON.parse(saved));
-          } catch (e) {
-            console.error(e);
-            setPatientData({
-              name: 'Paciente',
-              age: 30,
-              weight: 70,
-              height: 168,
-              initialWeight: 70,
-              targetWeight: 65,
-              objective: 'Saúde e Bem-Estar'
-            });
-          }
-        } else {
-          setPatientData({
-            name: 'Paciente',
-            age: 30,
-            weight: 70,
-            height: 168,
-            initialWeight: 70,
-            targetWeight: 65,
-            objective: 'Saúde e Bem-Estar'
-          });
-        }
+        // Sem idade, peso e altura no prontuário, o painel não inventa valores: a pessoa conclui a triagem.
+        router.replace('/onboarding');
       }
     }
     loadData();
-  }, [user]);
+  }, [user, router]);
 
   const generateCreativePlan = async () => {
     if (!patientData) return;
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/gemini/generate-creative-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...patientData, observations })
+      // Só o que a IA precisa: o nome e o prontuário inteiro (fotos, medições) não saem do aparelho.
+      const data = await postJson('/api/gemini/generate-creative-plan', {
+        age: patientData.age,
+        weight: patientData.weight,
+        height: patientData.height,
+        objective: patientData.objective,
+        observations,
       });
-      const data = await res.json();
       if (data.text) {
         setCreativePlan(data.text);
       }
     } catch (error) {
       console.error(error);
+      if (error instanceof ApiError) alert(error.message);
     } finally {
       setIsGenerating(false);
     }
@@ -143,18 +101,12 @@ export default function PatientDashboard() {
         objective: patientData.objective
       };
       
-      if (user) {
-        const data = await getUserData(user.uid);
-        const savedPlans = data?.savedPlans || [];
-        savedPlans.unshift(newPlan);
-        await updateUserData(user.uid, { savedPlans });
-      } else {
-        const savedPlansStr = localStorage.getItem('mockSavedPlans');
-        const savedPlans = savedPlansStr ? JSON.parse(savedPlansStr) : [];
-        savedPlans.unshift(newPlan);
-        localStorage.setItem('mockSavedPlans', JSON.stringify(savedPlans));
-      }
-      
+      if (!user) return;
+      const data = await getUserData(user.uid);
+      const savedPlans = data?.savedPlans || [];
+      savedPlans.unshift(newPlan);
+      await updateUserData(user.uid, { savedPlans });
+
       router.push('/patient/plan');
     } catch (error) {
       console.error("Error saving plan:", error);
@@ -170,10 +122,10 @@ export default function PatientDashboard() {
       {/* Top Row: Key Metrics & Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <div className="lg:col-span-1 h-full">
-          <WeightProgress 
-            initialWeight={patientData.initialWeight || patientData.weight + 5} 
-            currentWeight={patientData.weight} 
-            targetWeight={patientData.targetWeight || patientData.weight - 5} 
+          <WeightProgress
+            initialWeight={patientData.initialWeight || patientData.weight}
+            currentWeight={patientData.weight}
+            targetWeight={patientData.targetWeight}
           />
         </div>
         <div className="lg:col-span-2 h-full">
@@ -277,15 +229,11 @@ export default function PatientDashboard() {
             <Achievements />
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="tour-evolution lg:col-span-2 h-full">
-              <EvolutionChart />
-            </div>
-            <div className="lg:col-span-1 h-full">
-              <MacronutrientsChart />
-            </div>
+          <div className="tour-evolution w-full">
+            <EvolutionChart />
           </div>
-          
+
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <div className="lg:col-span-2 h-full">
               <FoodDiary />
@@ -318,7 +266,7 @@ export default function PatientDashboard() {
           <h1 className="text-2xl font-bold text-slate-800">Olá, {patientData.name.split(' ')[0]}</h1>
           <p className="text-slate-600">Bem-vindo(a) de volta ao seu painel.</p>
           
-          <div className="flex gap-4 mt-2">
+          <div className="flex flex-wrap gap-2 sm:gap-4 mt-2">
             <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Objetivo: {patientData.objective}</span>
             <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Peso: {patientData.weight}kg</span>
           </div>
@@ -343,9 +291,12 @@ export default function PatientDashboard() {
       </div>
 
       {activeTab === 'overview' ? (
-        renderOverview()
+        <>
+          <NutriMessagesBanner />
+          {renderOverview()}
+        </>
       ) : (
-        <div className="pt-2">
+        <div className="pt-2 space-y-6">
           <PatientSettings 
             patientData={patientData} 
             onSave={(newData) => {
@@ -354,6 +305,7 @@ export default function PatientDashboard() {
               window.dispatchEvent(new Event('storage'));
             }} 
           />
+          <EmailNoticesToggle />
         </div>
       )}
     </div>

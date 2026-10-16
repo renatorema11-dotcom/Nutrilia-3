@@ -1,4 +1,4 @@
-import type {Metadata} from 'next';
+import type {Metadata, Viewport} from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/components/auth-provider';
@@ -12,6 +12,23 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'NutriAli',
   description: 'Plataforma de conexão entre nutricionistas e pacientes, com acompanhamento de planos e IA.',
+  applicationName: 'NutriAli',
+  appleWebApp: {
+    capable: true,
+    title: 'NutriAli',
+    statusBarStyle: 'default',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  // Deixa o app usar a tela toda no iPhone; as barras respeitam o entalhe com safe-area.
+  viewportFit: 'cover',
+  themeColor: '#4c8466',
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {

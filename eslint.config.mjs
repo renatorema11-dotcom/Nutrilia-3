@@ -1,17 +1,11 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { FlatCompat } from '@eslint/eslintrc';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
-const eslintConfig = [
-  { ignores: [".next/**", "node_modules/**", "dist/**"] },
-  ...compat.extends("next/core-web-vitals"),
+const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta.url)) });
+const config = [
+  { ignores: ['.next/**', 'node_modules/**', 'dist/**'] },
+  ...compat.extends('next/core-web-vitals'),
 ];
 
-export default eslintConfig;
+export default config;

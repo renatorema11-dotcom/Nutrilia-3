@@ -1,90 +1,26 @@
-import { Type } from "@google/genai";
-import { NextRequest, NextResponse } from "next/server";
-import { generateGeminiContent } from "@/lib/gemini";
+import { NextResponse } from "next/server";
+import { aiErrorResponse, generateAiJson, normalizePlan } from "@/lib/ai";
+import { clip, guardAi } from "@/lib/ai-guard";
+import { planRequest } from "@/lib/plan-draft";
 
-export async function POST(req: NextRequest) {
-  const fallbackJson = {
-    days: [
-      {
-        name: "Segunda a Sexta (Plano Sugerido)",
-        meals: [
-          {
-            time: "08:00",
-            name: "Café da Manhã",
-            items: ["2 Ovos mexidos", "1 Fatia de pão integral", "1 Fruta da estação"]
-          },
-          {
-            time: "12:30",
-            name: "Almoço",
-            items: ["150g de Filé de frango ou peixe grelhado", "4 colheres de sopa de Arroz integral", "1 concha de Feijão", "Salada verde à vontade"]
-          },
-          {
-            time: "16:00",
-            name: "Lanche da Tarde",
-            items: ["1 Iogurte natural desnatado", "1 porção de castanhas ou nozes"]
-          },
-          {
-            time: "19:30",
-            name: "Jantar",
-            items: ["120g de Proteína magra grelhada", "Legumes cozidos no vapor", "Salada de folhas variadas"]
-          }
-        ]
-      }
-    ]
-  };
+export const runtime = 'nodejs';
+
+// O endereço da rota mantém o nome antigo; a IA que responde é a configurada em lib/ai.ts.
+export async function POST(req: Request) {
+  // Só a nutricionista logada gera rascunhos, com limite de pedidos e de tamanho.
+  const guard = await guardAi(req, { roles: ['nutritionist'], scope: 'generate-plan', limit: 15, maxChars: 40_000 });
+  if (!guard.ok) return guard.response;
 
   try {
-    const { patientContext, instructions } = await req.json();
+    const patientContext = clip(guard.body.patientContext, 3000);
+    const instructions = clip(guard.body.instructions, 2000);
 
-    const result = await generateGeminiContent({
-      model: "gemini-2.5-flash",
-      contents: `Gere um rascunho de plano alimentar para o seguinte paciente.\nContexto do paciente: ${patientContext}\nInstruções adicionais do nutricionista: ${instructions}`,
-      config: {
-        systemInstruction: "Você é um assistente de IA para nutricionistas. Gere um plano alimentar estruturado em JSON com base nos dados do paciente e diretrizes.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            days: {
-              type: Type.ARRAY,
-              description: "Dias da semana (ex: 'Segunda a Sexta', 'Fim de Semana')",
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  meals: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        time: { type: Type.STRING, description: "Horário da refeição (ex: 08:00)" },
-                        name: { type: Type.STRING, description: "Nome da refeição (ex: Café da Manhã)" },
-                        items: {
-                          type: Type.ARRAY,
-                          items: { type: Type.STRING },
-                          description: "Lista de alimentos e quantidades"
-                        }
-                      },
-                      required: ["time", "name", "items"]
-                    }
-                  }
-                },
-                required: ["name", "meals"]
-              }
-            }
-          },
-          required: ["days"]
-        }
-      },
-      fallbackJson
-    });
+    // O mesmo pedido que a Ali da nutricionista usa para montar o rascunho por voz (lib/plan-draft.ts).
+    const data = await generateAiJson(planRequest(patientContext, instructions));
 
-    const parsedData = result.json || (result.text ? JSON.parse(result.text) : fallbackJson);
-
-    return NextResponse.json({ data: parsedData });
+    // Só segue para a tela o que veio no formato certo; se não vier nada aproveitável, a nutricionista é avisada.
+    return NextResponse.json({ data: normalizePlan(data) });
   } catch (error) {
-    console.error("Gemini Generate Plan Error:", error);
-    return NextResponse.json({ data: fallbackJson });
+    return aiErrorResponse(error, 'geração de plano');
   }
 }
-

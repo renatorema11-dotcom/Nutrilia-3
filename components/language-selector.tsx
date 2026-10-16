@@ -53,7 +53,8 @@ function setGoogtransCookie(targetCode: string) {
   }
 }
 
-export function LanguageSelector({ className = '' }: { className?: string }) {
+/** compact: em telas pequenas mostra só a bandeira e a sigla do idioma. */
+export function LanguageSelector({ className = '', compact = false }: { className?: string; compact?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLang, setSelectedLang] = useState<Language>(LANGUAGES[0]);
@@ -198,13 +199,13 @@ export function LanguageSelector({ className = '' }: { className?: string }) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="group inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/90 hover:bg-white border border-slate-200/90 hover:border-teal-500/40 shadow-sm hover:shadow-md text-slate-700 hover:text-teal-900 transition-all duration-200 text-xs font-semibold cursor-pointer backdrop-blur-md"
+        className={`group inline-flex items-center gap-2 ${compact ? 'px-2.5 sm:px-3.5' : 'px-3.5'} py-1.5 rounded-full bg-white/90 hover:bg-white border border-slate-200/90 hover:border-teal-500/40 shadow-sm hover:shadow-md text-slate-700 hover:text-teal-900 transition-all duration-200 text-xs font-semibold cursor-pointer backdrop-blur-md`}
         aria-label="Selecionar Idioma"
       >
         <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 group-hover:bg-teal-50 text-sm leading-none shrink-0 transition-colors">
           {selectedLang.flag}
         </span>
-        <span className="tracking-tight text-slate-800 group-hover:text-teal-900 font-medium">
+        <span className={`tracking-tight text-slate-800 group-hover:text-teal-900 font-medium ${compact ? 'hidden sm:inline' : ''}`}>
           {selectedLang.name}
         </span>
         <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded-md group-hover:bg-teal-100/60 group-hover:text-teal-700 transition-colors">
@@ -219,7 +220,7 @@ export function LanguageSelector({ className = '' }: { className?: string }) {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white/95 backdrop-blur-xl shadow-2xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-2xl bg-white/95 backdrop-blur-xl shadow-2xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
           {/* Header */}
           <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100/80 mb-2">
             <div className="flex items-center gap-2">
