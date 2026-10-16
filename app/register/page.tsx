@@ -7,6 +7,7 @@ import { Apple, User, Stethoscope } from 'lucide-react';
 import Link from 'next/link';
 import { LanguageSelector } from '@/components/language-selector';
 import { CRN_REGIONS, parseCrn } from '@/lib/crn';
+import { newConsent } from '@/lib/privacy';
 
 function registerErrorMessage(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error
@@ -37,6 +38,7 @@ export default function Register() {
   const [formError, setFormError] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [phone, setPhone] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
   const { login, loginWithGoogle, registerWithEmail } = useAuth();
@@ -45,7 +47,12 @@ export default function Register() {
     e.preventDefault();
     if (isLoading) return;
     setFormError('');
-    let extraData = {};
+    if (!accepted) {
+      setFormError('Para criar a conta, leia e aceite a Política de Privacidade.');
+      return;
+    }
+    // O aceite do termo fica gravado na conta, com a versão da política e a hora.
+    let extraData: Record<string, unknown> = { privacyConsent: newConsent() };
     if (role === 'nutritionist') {
       // O formato do CRN é conferido aqui; se a inscrição existe, quem confere é o responsável, antes de aprovar.
       const checked = parseCrn(`CRN-${crnRegion} ${crnNumber}`);
@@ -53,7 +60,7 @@ export default function Register() {
         setFormError(!crnRegion ? 'Escolha a região do seu CRN.' : checked.ok ? '' : checked.error);
         return;
       }
-      extraData = { crn: checked.crn, specialty: specialty.trim(), phone: phone.trim() };
+      extraData = { ...extraData, crn: checked.crn, specialty: specialty.trim(), phone: phone.trim() };
     }
     setIsLoading(true);
 
@@ -246,6 +253,17 @@ export default function Register() {
                   />
                 </div>
               )}
+
+              <label className="flex items-start gap-3 text-sm text-slate-700">
+                <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-1 h-4 w-4 accent-teal-600" />
+                <span>
+                  Li e aceito a{' '}
+                  <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-700 underline">Política de Privacidade</a>
+                  {role === 'patient'
+                    ? ' e autorizo o uso dos meus dados, inclusive os de saúde, para o meu acompanhamento nutricional.'
+                    : ' e me comprometo a usar os dados dos meus pacientes só para o acompanhamento nutricional, com sigilo profissional.'}
+                </span>
+              </label>
 
               <Button type="submit" disabled={isLoading} className="w-full mt-4">
                 {isLoading ? 'Criando conta...' : 'Criar conta'}
