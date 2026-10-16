@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "clean": "next clean",
-    "test:ali": "node tests/ali-auth.cjs && node tests/agenda.cjs && node tests/appointments.cjs && node tests/nutri-auth.cjs && node tests/nutri-assistant.cjs && node tests/weekly-report.cjs && node tests/ai-guard.cjs && node tests/ai-provider.cjs && node tests/patient-round.cjs && node tests/ali-session.cjs && node tests/approval.cjs && node tests/notes-route.cjs && node tests/patient-notices.cjs",
+    "test:ali": "node tests/ali-auth.cjs && node tests/agenda.cjs && node tests/appointments.cjs && node tests/nutri-auth.cjs && node tests/nutri-assistant.cjs && node tests/weekly-report.cjs && node tests/ai-guard.cjs && node tests/ai-provider.cjs && node tests/patient-round.cjs && node tests/ali-session.cjs && node tests/approval.cjs && node tests/notes-route.cjs && node tests/patient-notices.cjs && node tests/privacy.cjs",
     "typecheck": "tsc --noEmit",
     "test:n8n": "node tests/n8n-contract.cjs"
   },
