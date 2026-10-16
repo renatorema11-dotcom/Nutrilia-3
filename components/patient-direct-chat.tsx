@@ -13,6 +13,7 @@ import {
   sendDirectMessage,
   subscribeToDirectMessages
 } from '@/lib/chat';
+import { markNutriChatRead } from '@/components/nutri-notices';
 
 /** Conversa direta do paciente com a nutricionista dele: a mesma que ela vê em "Chat com Pacientes". */
 export function PatientDirectChat() {
@@ -59,6 +60,16 @@ export function PatientDirectChat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Mensagem da nutricionista na tela conta como lida: o aviso por e-mail não sai para o que o paciente já viu.
+  const markedRef = useRef('');
+  useEffect(() => {
+    if (!user?.uid) return;
+    const newest = [...messages].reverse().find((m) => m.senderRole === 'nutritionist');
+    if (!newest || newest.createdAt <= markedRef.current) return;
+    markedRef.current = newest.createdAt;
+    markNutriChatRead(user.uid).catch(() => {});
+  }, [messages, user]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
