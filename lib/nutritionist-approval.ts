@@ -97,7 +97,7 @@ export function readApprovalLink(token: unknown, now = new Date()): LinkCheck {
 }
 
 /** Gmail conectado de um dos responsáveis, para enviar os avisos. Sem nenhum conectado, devolve null. */
-async function adminSender(db: Firestore, preferred: string[] = []): Promise<{ token: string; email: string } | null> {
+export async function adminSender(db: Firestore, preferred: string[] = []): Promise<{ token: string; email: string } | null> {
   for (const email of [...new Set([...preferred.map((item) => item.toLowerCase()), ...adminEmails()])]) {
     const found = await db.collection('users').where('email', '==', email).get();
     for (const doc of found.docs) {
