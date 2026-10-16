@@ -67,6 +67,8 @@ export interface Patient {
   /** Rascunho novo feito pela Ali enquanto o plano aprovado continua valendo; vira o plano atual quando aprovado. */
   pendingPlan?: Plan | null;
   planDraftJob?: PlanDraftJob;
+  /** Quando a nutricionista aprovou o plano atual; o servidor avisa o paciente por e-mail. */
+  planApprovedAt?: string;
   pastPlans?: Plan[];
   /** Senha temporária gerada no cadastro — NÃO é persistida no Firestore. Exibida uma única vez ao nutricionista. */
   tempPassword?: string;

@@ -468,7 +468,7 @@ export async function declineAppointmentRequest(db: Firestore, nutritionistId: s
   const withMessage = text.length >= 2;
 
   await Promise.all(open.map((request) => db.collection('appointmentRequests').doc(request.id)
-    .set({ status: 'declined', answeredAt: now.toISOString() }, { merge: true })));
+    .set({ status: 'declined', answeredAt: now.toISOString(), ...(withMessage ? { declineMessage: true } : {}) }, { merge: true })));
   if (withMessage) await postChatMessage(db, nutritionistId, patient.uid, text, now);
   return {
     ok: true,
