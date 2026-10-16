@@ -118,7 +118,8 @@ export default function PatientProfile() {
       ...draftPlan,
       status: 'approved'
     };
-    await updatePatient(patient.id, { currentPlan: approvedPlan });
+    // A hora da aprovação dispara o aviso por e-mail ao paciente (plano novo no app).
+    await updatePatient(patient.id, { currentPlan: approvedPlan, planApprovedAt: new Date().toISOString() });
     setPatient({ ...patient, currentPlan: approvedPlan });
     setDraftPlan(null);
     alert('Plano aprovado com sucesso! Liberado para o paciente.');
@@ -164,7 +165,7 @@ export default function PatientProfile() {
     if (!patient.pendingPlan) return;
     const approved: Plan = { ...patient.pendingPlan, status: 'approved' };
     const pastPlans = patient.currentPlan ? [...(patient.pastPlans || []), patient.currentPlan] : (patient.pastPlans || []);
-    await updatePatient(patient.id, { currentPlan: approved, pendingPlan: null, pastPlans });
+    await updatePatient(patient.id, { currentPlan: approved, pendingPlan: null, pastPlans, planApprovedAt: new Date().toISOString() });
     setPatient({ ...patient, currentPlan: approved, pendingPlan: null, pastPlans });
     alert('Plano novo aprovado! Ele substituiu o plano anterior para o paciente.');
   };
