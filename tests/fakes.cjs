@@ -57,6 +57,7 @@ function createFirestore() {
     return {
       doc: (id) => docRef(col, id),
       where: (field, op, value) => query(col, [[field, op, value]]),
+      get: () => query(col, []).get(),
       add: async (data) => { const id = `auto-${++added}`; store.set(`${col}/${id}`, structuredClone(data)); return docRef(col, id); },
     };
   }
