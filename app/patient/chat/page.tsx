@@ -9,6 +9,7 @@ import { getUserData } from '@/lib/db';
 import { ApiError, postJson } from '@/lib/api-client';
 import { ElevenLabsAgent } from '@/components/elevenlabs-agent';
 import { PatientDirectChat } from '@/components/patient-direct-chat';
+import { useNutriUnread } from '@/components/nutri-notices';
 
 interface Message {
   role: 'user' | 'ai';
@@ -36,6 +37,7 @@ function PatientChatContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [patientContext, setPatientContext] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { unread } = useNutriUnread();
 
   useEffect(() => {
     async function loadContext() {
@@ -122,6 +124,9 @@ function PatientChatContent() {
             >
               <Icon className="w-4 h-4" />
               {label}
+              {id === 'nutritionist' && tab !== 'nutritionist' && unread > 0 && (
+                <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-600 px-1.5 text-[11px] font-bold text-white" aria-label={`${unread} mensagens novas`}>{unread}</span>
+              )}
             </button>
           ))}
         </div>
