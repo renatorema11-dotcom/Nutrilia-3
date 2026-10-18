@@ -6,6 +6,7 @@ import { getAdminApp, getAdminDb, hasGatewaySecret, json, lastSeenLookup } from 
 import * as assistant from '@/lib/nutritionist-assistant';
 import { approvalOf } from '@/lib/nutritionist-approval';
 import { generatePlanDraft } from '@/lib/plan-draft';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,8 +32,8 @@ async function audit(db: Firestore, nutritionistId: string, action: Action, resu
   try {
     // Só o que foi feito e por quem: o conteúdo de e-mails, recados e compromissos não entra no registro.
     await db.collection('aiActions').add({ nutritionistId, patientUid: null, actor: 'nutritionist', action, result, createdAt: new Date().toISOString() });
-  } catch {
-    console.error('Ali da nutricionista: falha ao registrar auditoria.');
+  } catch (error) {
+    reportServerError('Ali da nutricionista: falha ao registrar auditoria.', error);
   }
 }
 
@@ -101,8 +102,8 @@ export async function POST(req: Request) {
     await audit(db, uid, name);
     const extra = Object.fromEntries(Object.entries(result).filter(([key]) => key !== 'ok' && key !== 'speech'));
     return reply(true, result.speech, 200, extra);
-  } catch {
-    console.error('Ali da nutricionista: ação indisponível.');
+  } catch (error) {
+    reportServerError('Ali da nutricionista: ação indisponível.', error);
     // Falhas inesperadas entram na contagem do relatório de uso.
     try { await audit(getAdminDb(), uid, name, 'failed'); } catch { /* o banco pode ser justamente o que falhou */ }
     return reply(false, 'Não consegui fazer isso agora. Tente de novo em instantes.', 500);
