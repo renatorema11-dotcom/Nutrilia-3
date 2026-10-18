@@ -1,5 +1,6 @@
 import { getAdminDb, hasGatewaySecret, json } from '@/lib/firebase-admin';
 import { usageReport } from '@/lib/weekly-report';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,8 +10,8 @@ export async function POST(req: Request) {
   if (!hasGatewaySecret(req)) return json({ ok: false, error: 'Não autorizado.' }, 401);
   try {
     return json({ ok: true, ...(await usageReport(getAdminDb())) });
-  } catch {
-    console.error('Relatório de uso: falha ao processar.');
+  } catch (error) {
+    reportServerError('Relatório de uso: falha ao processar.', error);
     return json({ ok: false, error: 'Não foi possível montar o relatório agora.' }, 500);
   }
 }
