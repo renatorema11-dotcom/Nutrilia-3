@@ -1,6 +1,7 @@
 import { getAdminDb, json, verifyAccount } from '@/lib/firebase-admin';
 import { allowRequest } from '@/lib/ai-guard';
 import { deletionStatusOf, requestDeletion } from '@/lib/account-privacy';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,8 +37,8 @@ export async function POST(req: Request) {
     const result = await requestDeletion(getAdminDb(), account.uid, account.profile, body.reason);
     if (!result.ok) return json({ error: result.error }, result.status);
     return json({ deletion: result.deletion });
-  } catch {
-    console.error('Exclusão: falha ao registrar o pedido.');
+  } catch (error) {
+    reportServerError('Exclusão: falha ao registrar o pedido.', error);
     return json({ error: 'Não foi possível registrar o pedido agora. Tente de novo em instantes.' }, 503);
   }
 }
