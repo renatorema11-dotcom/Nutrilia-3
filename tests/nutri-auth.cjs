@@ -52,7 +52,7 @@ async function test(name, options, status, inspect = () => {}) {
   };
   const env = { AGENT_API_SECRET: secret, FIREBASE_SERVICE_ACCOUNT_KEY: JSON.stringify({ project_id: cfg.projectId }), ...options.env };
   const context = vm.createContext({
-    Buffer, Request, Response, console: { error: () => {} }, process: { env }, timingSafeEqual, firebaseConfig: cfg, assistant,
+    Buffer, Request, Response, console: { error: () => {} }, reportServerError: () => {}, process: { env }, timingSafeEqual, firebaseConfig: cfg, assistant,
     // O rascunho do plano usa a IA (lib/plan-draft.ts) e o "after" do Next; aqui os dois são de mentira.
     generatePlanDraft: async () => ({ days: [] }), after: (task) => events.push(['after', typeof task]),
     getApps: () => [], cert: (a) => a, initializeApp: () => ({ name: 'test' }),

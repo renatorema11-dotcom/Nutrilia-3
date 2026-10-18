@@ -93,7 +93,7 @@ async function fakeFetch(url, init = {}) {
 
 // ───────────── Código do app carregado sem dependências ─────────────
 const context = vm.createContext({
-  Buffer, URLSearchParams, structuredClone, FieldValue, fetch: fakeFetch, console: { error: () => {} },
+  Buffer, URLSearchParams, structuredClone, FieldValue, fetch: fakeFetch, console: { error: () => {} }, reportServerError: () => {},
   process: { env: { GOOGLE_CLIENT_ID: 'cliente-de-teste', GOOGLE_CLIENT_SECRET: 'segredo-de-teste', GOOGLE_TOKEN_KEY: 'chave-de-teste-'.repeat(4) } },
   createCipheriv: crypto.createCipheriv, createDecipheriv: crypto.createDecipheriv, createHash: crypto.createHash,
   createHmac: crypto.createHmac, randomBytes: crypto.randomBytes, timingSafeEqual: crypto.timingSafeEqual,

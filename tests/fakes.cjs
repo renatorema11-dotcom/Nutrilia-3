@@ -128,6 +128,8 @@ function loadLib(files, extras) {
     process: { env: { GOOGLE_CLIENT_ID: 'cliente-de-teste', GOOGLE_CLIENT_SECRET: 'segredo-de-teste', GOOGLE_TOKEN_KEY: 'chave-de-teste-'.repeat(4) } },
     createCipheriv: crypto.createCipheriv, createDecipheriv: crypto.createDecipheriv, createHash: crypto.createHash,
     createHmac: crypto.createHmac, randomBytes: crypto.randomBytes, timingSafeEqual: crypto.timingSafeEqual,
+    // Aviso de erros do servidor (lib/server-alerts.ts): nos outros testes não faz nada; o próprio tem teste separado.
+    reportServerError: () => {}, notifyServerError: () => {},
     ...extras,
   });
   for (const file of files) {

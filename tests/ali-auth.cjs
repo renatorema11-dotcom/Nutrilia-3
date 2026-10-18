@@ -34,7 +34,7 @@ async function test(name,options,status,inspect=()=>{}) {
     rescheduleNextAppointment:async (db,uid,start)=>{events.push(['reschedule',uid,start]);return {ok:true,speech:'Consulta remarcada.',appointment:{label:'quarta',start,mode:'online'}};},
     ...options.appointments,
   };
-  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,appointments,dailyLog,
+  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},reportServerError:()=>{},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,appointments,dailyLog,
     NextResponse:{json:(body,init={})=>({body,status:init.status||200,headers:init.headers})},
     getApps:()=>[],cert:a=>a,initializeApp:()=>({name:'test'}),
     getAuth:()=>({verifyIdToken:async(token,revocation)=>{
