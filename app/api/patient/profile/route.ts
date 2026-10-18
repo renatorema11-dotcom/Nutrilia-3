@@ -1,5 +1,6 @@
 import { getAdminDb, json, verifyCaller } from '@/lib/firebase-admin';
 import { saveProfile, syncLegacyProfile } from '@/lib/patient-profile';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,8 +23,8 @@ export async function POST(req: Request) {
     const result = await saveProfile(db, caller.uid, body);
     if (!result.ok) return json({ error: result.error }, 422);
     return json({ ok: true, profile: result.profile });
-  } catch {
-    console.error('Perfil do paciente: falha ao gravar.');
+  } catch (error) {
+    reportServerError('Perfil do paciente: falha ao gravar.', error);
     return json({ error: 'Não foi possível salvar agora. Tente de novo em instantes.' }, 503);
   }
 }
