@@ -9,6 +9,7 @@ import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
 import * as workspace from '@/lib/google-workspace';
 import * as appointments from '@/lib/appointments';
 import * as dailyLog from '@/lib/daily-log';
+import { reportServerError } from '@/lib/server-alerts';
 
 /** Ações do próprio paciente: segredo do gateway + ID token Firebase verificado. */
 function getAdminApp(): App {
@@ -66,9 +67,9 @@ async function audit(db: Firestore, patientUid: string, nutritionistId: string |
       result, // Não duplicar dados de saúde nem tokens no log de auditoria.
       createdAt: new Date().toISOString(),
     });
-  } catch {
+  } catch (error) {
     // Auditoria não deve bloquear a ação do paciente, mas o erro precisa aparecer nos logs
-    console.error('Ali: falha ao registrar auditoria.');
+    reportServerError('Ali: falha ao registrar auditoria.', error);
   }
 }
 
@@ -354,8 +355,8 @@ export async function POST(req: Request) {
         return speechResponse(result.speech, { appointment: result.appointment });
       }
     }
-  } catch {
-    console.error('Ali: ação indisponível.');
+  } catch (error) {
+    reportServerError('Ali: ação indisponível.', error);
     // Falhas inesperadas entram na contagem do relatório de uso.
     try { await audit(getAdminDb(), patientUid, null, action, 'failed'); } catch { /* o banco pode ser justamente o que falhou */ }
     return speechError('Não consegui executar essa ação agora. Tenta de novo em instantes.', 500);
