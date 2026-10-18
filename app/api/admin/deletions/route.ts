@@ -3,6 +3,7 @@ import { getAdminApp, getAdminDb, json, verifyAccount, type Account } from '@/li
 import { allowRequest } from '@/lib/ai-guard';
 import { adminEmails, isAdmin } from '@/lib/nutritionist-approval';
 import { decideDeletion, listDeletionRequests } from '@/lib/account-privacy';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,8 +34,8 @@ export async function GET(req: Request) {
   if (refused) return refused;
   try {
     return json({ deletions: await listDeletionRequests(getAdminDb()) });
-  } catch {
-    console.error('Exclusão: falha ao listar os pedidos.');
+  } catch (error) {
+    reportServerError('Exclusão: falha ao listar os pedidos.', error);
     return json({ error: 'Não foi possível carregar os pedidos agora.' }, 503);
   }
 }
@@ -64,8 +65,8 @@ export async function POST(req: Request) {
     });
     if (!result.ok) return json({ error: result.error }, result.status);
     return json({ status: result.status });
-  } catch {
-    console.error('Exclusão: falha ao decidir o pedido.');
+  } catch (error) {
+    reportServerError('Exclusão: falha ao decidir o pedido.', error);
     // Se parou no meio, repetir termina o serviço: o que já foi apagado é simplesmente pulado.
     return json({ error: 'Não foi possível concluir agora. Tente de novo em instantes.' }, 503);
   }
