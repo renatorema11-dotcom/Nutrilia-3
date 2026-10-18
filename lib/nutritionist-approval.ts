@@ -6,6 +6,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 import { CFN_LOOKUP_URL, parseCrn } from './crn';
 import { emailLayout, escapeHtml, getAccess, isValidEmail, p, sendMail } from './google-workspace';
+import { reportServerError } from './server-alerts';
 
 export type Approval = 'approved' | 'pending' | 'rejected';
 
@@ -152,13 +153,13 @@ async function notifyAdmins(db: Firestore, record: ApprovalRecord, now: Date): P
       try {
         await sendMail(sender.token, { fromName: 'NutriAli', fromEmail: sender.email, to, subject: `Nutricionista aguardando aprovação: ${record.name}`, html: html(to) });
         sent = true;
-      } catch {
-        console.error('Aprovação: falha ao enviar o aviso a um dos responsáveis.');
+      } catch (error) {
+        reportServerError('Aprovação: falha ao enviar o aviso a um dos responsáveis.', error);
       }
     }
     return sent;
-  } catch {
-    console.error('Aprovação: falha ao avisar os responsáveis.');
+  } catch (error) {
+    reportServerError('Aprovação: falha ao avisar os responsáveis.', error);
     return false;
   }
 }
@@ -271,8 +272,8 @@ export async function decideApproval(db: Firestore, adminEmail: string, uid: unk
         });
         emailed = true;
       }
-    } catch {
-      console.error('Aprovação: falha ao avisar a nutricionista da decisão.');
+    } catch (error) {
+      reportServerError('Aprovação: falha ao avisar a nutricionista da decisão.', error);
     }
   }
   return { ok: true, approval, emailed };

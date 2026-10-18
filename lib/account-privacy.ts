@@ -8,6 +8,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { emailLayout, escapeHtml, getAccess, isValidEmail, p, sendMail } from './google-workspace';
 import { adminEmails, adminSender } from './nutritionist-approval';
 import { PRIVACY_CONTACT, PRIVACY_CONTROLLER, PRIVACY_VERSION } from './privacy';
+import { reportServerError } from './server-alerts';
 
 export const DELETIONS_COLLECTION = 'deletionRequests';
 const PRIVACY_APP_URL = 'https://app.nutriali.cloud';
@@ -128,13 +129,13 @@ export async function requestDeletion(db: Firestore, uid: string, profile: Data 
             ].join(''), 'Aviso automático do NutriAli.'),
           });
           adminNotified = true;
-        } catch {
-          console.error('Exclusão: falha ao avisar um dos responsáveis.');
+        } catch (error) {
+          reportServerError('Exclusão: falha ao avisar um dos responsáveis.', error);
         }
       }
     }
-  } catch {
-    console.error('Exclusão: falha ao avisar os responsáveis.');
+  } catch (error) {
+    reportServerError('Exclusão: falha ao avisar os responsáveis.', error);
   }
   if (nutritionistId) {
     // A nutricionista recebe pelo próprio Gmail, para ela mesma (o paciente não vê esse e-mail).
@@ -150,8 +151,8 @@ export async function requestDeletion(db: Firestore, uid: string, profile: Data 
           ].join(''), 'Aviso automático do NutriAli.'),
         });
       }
-    } catch {
-      console.error('Exclusão: falha ao avisar a nutricionista.');
+    } catch (error) {
+      reportServerError('Exclusão: falha ao avisar a nutricionista.', error);
     }
   }
   return { ok: true, deletion: viewOf(request), adminNotified };

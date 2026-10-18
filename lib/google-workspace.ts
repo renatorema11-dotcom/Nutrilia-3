@@ -5,6 +5,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { defaultAliSettings, sanitizeAliSettings, describeMode, type AliSettings } from './ali-settings';
 import { generateSlots, initialReminders, isFree, searchWindow, slotLabel, toOffsetIso, validateSlotStart, type Interval, type Period, type Reminders, type Slot } from './agenda';
+import { reportServerError } from './server-alerts';
 
 export const GOOGLE_SCOPES = [
   'openid',
@@ -466,8 +467,8 @@ export async function createAppointment(db: Firestore, access: { token: string; 
       db.collection('users').doc(input.nutritionistId).set({ appointments: FieldValue.arrayUnion(appointment) }, { merge: true }),
       db.collection(APPOINTMENTS_COLLECTION).doc(appointmentDocId(input.nutritionistId, appointment.id)).set(record),
     ]);
-  } catch {
-    console.error('Ali: consulta criada na agenda, mas não registrada no app.');
+  } catch (error) {
+    reportServerError('Ali: consulta criada na agenda, mas não registrada no app.', error);
   }
 
   const where = mode === 'presencial'
@@ -492,8 +493,8 @@ export async function createAppointment(db: Firestore, access: { token: string; 
         ].join(''), 'Consulta marcada pela Ali, a assistente do NutriAli.'),
       });
       patientMailed = true;
-    } catch {
-      console.error('Ali: falha ao enviar confirmação ao paciente.');
+    } catch (error) {
+      reportServerError('Ali: falha ao enviar confirmação ao paciente.', error);
     }
   }
   if (!byPatient) {
@@ -517,8 +518,8 @@ export async function createAppointment(db: Firestore, access: { token: string; 
         created.htmlLink ? p(`<a href="${escapeHtml(created.htmlLink)}" style="color:#276e58">Abrir na Agenda do Google</a>`) : '',
       ].join(''), 'Aviso automático do NutriAli.'),
     });
-  } catch {
-    console.error('Ali: falha ao avisar a nutricionista.');
+  } catch (error) {
+    reportServerError('Ali: falha ao avisar a nutricionista.', error);
   }
 
   return {
@@ -579,8 +580,8 @@ export async function notifyAppointmentRequest(db: Firestore, input: { nutrition
         p('Confirme o horário com o paciente pelo chat do NutriAli.'),
       ].join(''), 'Aviso automático do NutriAli.'),
     });
-  } catch {
-    console.error('Ali: falha ao avisar pedido de consulta.');
+  } catch (error) {
+    reportServerError('Ali: falha ao avisar pedido de consulta.', error);
   }
 }
 
@@ -609,8 +610,8 @@ export async function notifyNewPatient(db: Firestore, patientUid: string): Promi
     });
     await ref.set({ nutritionistNotifiedId: nutritionistId }, { merge: true });
     return true;
-  } catch {
-    console.error('Falha ao avisar a nutricionista sobre o novo paciente.');
+  } catch (error) {
+    reportServerError('Falha ao avisar a nutricionista sobre o novo paciente.', error);
     return false;
   }
 }

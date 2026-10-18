@@ -3,6 +3,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { localDateKey, zonedParts, zonedToDate } from './agenda';
 import { emailLayout, escapeHtml, getAccess, loadSettings, p, sendMail } from './google-workspace';
+import { reportServerError } from './server-alerts';
 
 const REPORT_DAY_MS = 86_400_000;
 const REPORT_DAYS = 7;
@@ -174,9 +175,9 @@ export async function runWeeklySummaries(db: Firestore, lastSeen: LastSeenLookup
     totals.checked++;
     try {
       totals[await sendWeeklySummary(db, doc.id, lastSeen, now)]++;
-    } catch {
+    } catch (error) {
       totals.failed++;
-      console.error('Resumo semanal: falha ao enviar para uma nutricionista.');
+      reportServerError('Resumo semanal: falha ao enviar para uma nutricionista.', error);
     }
   }
   return totals;

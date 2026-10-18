@@ -3,6 +3,7 @@
 // nunca um texto pronto que pareça resposta de verdade.
 import { json } from './firebase-admin';
 import { generateWithGemini } from './gemini';
+import { notifyServerError } from './server-alerts';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 // Os modelos da Groq mudam com frequência: GROQ_MODEL e GROQ_VISION_MODEL trocam o modelo sem mexer no código.
@@ -120,8 +121,14 @@ async function callGroq(request: AiRequest, apiKey: string): Promise<string> {
 
   if (!response.ok) {
     console.warn(`IA (Groq) recusou o pedido: ${response.status} no modelo ${model}. ${await providerMessage(response)}`);
-    if (response.status === 429) throw new AiError(AI_MESSAGES.busy, 429);
+    if (response.status === 429) {
+      notifyServerError('IA: limite de uso do serviço de IA atingido.', { status: 429 });
+      throw new AiError(AI_MESSAGES.busy, 429);
+    }
+    // Foto grande demais é do pedido, não do servidor: não vira aviso.
     if (response.status === 413) throw new AiError(AI_MESSAGES.tooLarge, 413);
+    // O código diz o motivo (401: chave recusada, 5xx: Groq fora do ar).
+    notifyServerError('IA: o serviço de IA recusou o pedido.', { status: response.status });
     throw new AiError(AI_MESSAGES.unavailable, 503);
   }
   const data = await response.json();
@@ -139,6 +146,7 @@ export async function generateAi(request: AiRequest): Promise<string> {
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!groqKey && !geminiKey) {
     console.warn('IA sem chave no servidor: configure GROQ_API_KEY (ou GEMINI_API_KEY).');
+    notifyServerError('IA: o servidor está sem chave de IA configurada.');
     throw new AiError(AI_MESSAGES.unavailable, 503);
   }
   try {
@@ -150,7 +158,11 @@ export async function generateAi(request: AiRequest): Promise<string> {
     // Rede fora do ar, tempo esgotado ou erro do Gemini: o motivo fica só no registro do servidor.
     const reason = String((error as Error)?.message || error).slice(0, 300);
     console.warn(`IA falhou: ${reason}`);
-    if (/429|RESOURCE_EXHAUSTED|quota/i.test(reason)) throw new AiError(AI_MESSAGES.busy, 429);
+    if (/429|RESOURCE_EXHAUSTED|quota/i.test(reason)) {
+      notifyServerError('IA: limite de uso do serviço de IA atingido.', error);
+      throw new AiError(AI_MESSAGES.busy, 429);
+    }
+    notifyServerError('IA: o serviço de IA não respondeu.', error);
     throw new AiError(AI_MESSAGES.unavailable, 503);
   }
 }
@@ -164,6 +176,7 @@ export async function generateAiJson(request: AiRequest): Promise<Record<string,
 export function aiErrorResponse(error: unknown, where: string): Response {
   if (error instanceof AiError) return json({ error: error.message }, error.status);
   console.error(`Erro inesperado em ${where}:`, error);
+  notifyServerError(`IA: erro inesperado em ${where}.`, error);
   return json({ error: AI_MESSAGES.unavailable }, 503);
 }
 

@@ -12,6 +12,7 @@ import { collectWeek } from './weekly-report';
 import type { LastSeenLookup } from './weekly-report';
 import { MOOD_LABELS, moodToday, waterToday } from './daily-log';
 import { cleanNote, listNotesFor, saveNote } from './consultation-notes';
+import { reportServerError } from './server-alerts';
 
 const NOT_CONNECTED = 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.';
 const DAILY_EMAIL_LIMIT = 40;
@@ -199,8 +200,8 @@ export async function scheduleConsultation(db: Firestore, nutritionistId: string
     const booked = result.appointment as { label?: unknown } | undefined;
     const closed = await closeRequestsAfterBooking(db, nutritionistId, patient.uid, typeof booked?.label === 'string' ? booked.label : '', now);
     if (closed) return { ...result, speech: `${result.speech} O pedido de consulta que estava aberto foi marcado como atendido.` };
-  } catch {
-    console.error('Ali da nutricionista: consulta marcada, mas o pedido de consulta não foi encerrado.');
+  } catch (error) {
+    reportServerError('Ali da nutricionista: consulta marcada, mas o pedido de consulta não foi encerrado.', error);
   }
   return result;
 }
@@ -786,18 +787,26 @@ export async function createPlanDraft(db: Firestore, nutritionistId: string, inp
       days = (await generate(context, instructions)).days;
     } catch (error) {
       // A mensagem da IA já é a que pode ser dita (indisponível, limite de uso...); outros erros ficam genéricos.
-      const reason = error && typeof (error as { status?: unknown }).status === 'number' ? cleanText((error as Error).message, 200) : '';
+      const known = !!error && typeof (error as { status?: unknown }).status === 'number';
+      const reason = known ? cleanText((error as Error).message, 200) : '';
+      // Falha da própria IA já gera aviso lá dentro; um erro de outro tipo avisa aqui.
+      if (!known) reportServerError('Ali da nutricionista: o rascunho do plano não foi montado.', error);
       await ref.update({ planDraftJob: { ...job, status: 'failed', finishedAt: new Date().toISOString(), ...(reason ? { reason } : {}) } }).catch(() => {});
       return;
     }
-    const fresh = await ref.get();
-    const current = fresh.exists ? fresh.data() || {} : {};
-    // Outro pedido começou depois deste: o rascunho mais novo é o que vale.
-    if (planJobOf(current.planDraftJob)?.id !== job.id) return;
-    const finished = new Date();
-    const draft = { id: `plan_${finished.getTime()}`, status: 'draft', createdDate: localDateKey(finished, tz), days, source: 'ali', ...(instructions ? { instructions } : {}) };
-    const approved = current.currentPlan && typeof current.currentPlan === 'object' && current.currentPlan.status === 'approved';
-    await ref.update({ ...(approved ? { pendingPlan: draft } : { currentPlan: draft }), planDraftJob: { ...job, status: 'done', finishedAt: finished.toISOString() } });
+    try {
+      const fresh = await ref.get();
+      const current = fresh.exists ? fresh.data() || {} : {};
+      // Outro pedido começou depois deste: o rascunho mais novo é o que vale.
+      if (planJobOf(current.planDraftJob)?.id !== job.id) return;
+      const finished = new Date();
+      const draft = { id: `plan_${finished.getTime()}`, status: 'draft', createdDate: localDateKey(finished, tz), days, source: 'ali', ...(instructions ? { instructions } : {}) };
+      const approved = current.currentPlan && typeof current.currentPlan === 'object' && current.currentPlan.status === 'approved';
+      await ref.update({ ...(approved ? { pendingPlan: draft } : { currentPlan: draft }), planDraftJob: { ...job, status: 'done', finishedAt: finished.toISOString() } });
+    } catch (error) {
+      // O andamento fica "montando" e, depois de 3 minutos, passa a contar como falha para quem perguntar.
+      reportServerError('Ali da nutricionista: o rascunho do plano foi montado, mas não foi salvo.', error);
+    }
   });
 
   return {

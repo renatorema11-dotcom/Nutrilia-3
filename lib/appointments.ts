@@ -5,6 +5,7 @@ import type { AliSettings } from './ali-settings';
 import { dueReminders, initialReminders, isFree, slotLabel, toOffsetIso, validateSlotStart, withoutInterval, type Interval, type ReminderKind } from './agenda';
 import { APPOINTMENTS_COLLECTION, CALENDAR_EVENTS_URL, appointmentDocId, busyIntervals, emailLayout, escapeHtml, getAccess, googleRequest, loadSettings, p, sendMail } from './google-workspace';
 import type { ActionResult, AppointmentRecord } from './google-workspace';
+import { reportServerError } from './server-alerts';
 
 type StoredAppointment = AppointmentRecord & { ref: DocumentReference };
 
@@ -106,8 +107,8 @@ async function cancelStored(db: Firestore, a: StoredAppointment, by: 'patient' |
         ].join(''), 'Aviso automático do NutriAli.'),
       });
     }
-  } catch {
-    console.error('Ali: falha ao avisar o cancelamento.');
+  } catch (error) {
+    reportServerError('Ali: falha ao avisar o cancelamento.', error);
   }
 
   return {
@@ -184,8 +185,8 @@ export async function rescheduleNextByNutritionist(db: Firestore, nutritionistId
         ].join(''), 'Consulta remarcada pela Ali, a assistente do NutriAli.'),
       });
       patientMailed = true;
-    } catch {
-      console.error('Ali: falha ao enviar a remarcação ao paciente.');
+    } catch (error) {
+      reportServerError('Ali: falha ao enviar a remarcação ao paciente.', error);
     }
   }
   return {
@@ -271,8 +272,8 @@ export async function rescheduleNextAppointment(db: Firestore, patientUid: strin
         ].join(''), 'Consulta remarcada pela Ali, a assistente do NutriAli.'),
       });
       patientMailed = true;
-    } catch {
-      console.error('Ali: falha ao enviar a remarcação ao paciente.');
+    } catch (error) {
+      reportServerError('Ali: falha ao enviar a remarcação ao paciente.', error);
     }
   }
   try {
@@ -285,8 +286,8 @@ export async function rescheduleNextAppointment(db: Firestore, patientUid: strin
         p(`<strong>Horário de antes:</strong> ${escapeHtml(current.label)}`),
       ].join(''), 'Aviso automático do NutriAli.'),
     });
-  } catch {
-    console.error('Ali: falha ao avisar a remarcação.');
+  } catch (error) {
+    reportServerError('Ali: falha ao avisar a remarcação.', error);
   }
 
   return {
