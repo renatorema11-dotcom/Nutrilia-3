@@ -1,6 +1,7 @@
 import { getAdminDb, json, verifyCaller } from '@/lib/firebase-admin';
 import { allowRequest } from '@/lib/ai-guard';
 import { exportPatientData } from '@/lib/account-privacy';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,8 +22,8 @@ export async function GET(req: Request) {
         'cache-control': 'no-store',
       },
     });
-  } catch {
-    console.error('Exportação: falha ao reunir os dados.');
+  } catch (error) {
+    reportServerError('Exportação: falha ao reunir os dados.', error);
     return json({ error: 'Não foi possível reunir os seus dados agora. Tente de novo em instantes.' }, 503);
   }
 }
