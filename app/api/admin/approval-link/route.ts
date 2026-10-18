@@ -1,6 +1,7 @@
 import { getAdminDb, json } from '@/lib/firebase-admin';
 import { allowRequest } from '@/lib/ai-guard';
 import { approvalByLink, decideByLink, readApprovalLink } from '@/lib/nutritionist-approval';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,8 +36,8 @@ export async function POST(req: Request) {
     const result = await decideByLink(getAdminDb(), body.token, body.decision);
     if (!result.ok) return json({ error: result.error }, result.status);
     return json({ approval: result.approval, emailed: result.emailed });
-  } catch {
-    console.error('Aprovação pelo link: falha ao processar.');
+  } catch (error) {
+    reportServerError('Aprovação pelo link: falha ao processar.', error);
     return json({ error: 'Não foi possível concluir agora. Tente de novo em instantes.' }, 503);
   }
 }
