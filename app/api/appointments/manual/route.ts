@@ -1,5 +1,6 @@
 import { getAdminDb, json, verifyCaller } from '@/lib/firebase-admin';
 import { createManualAppointment } from '@/lib/manual-appointments';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,8 +15,8 @@ export async function POST(req: Request) {
     const result = await createManualAppointment(getAdminDb(), caller, body);
     if (!result.ok) return json({ error: result.error }, result.status);
     return json({ ok: true, appointment: result.appointment, shared: result.shared });
-  } catch {
-    console.error('Consulta manual: falha ao gravar.');
+  } catch (error) {
+    reportServerError('Consulta manual: falha ao gravar.', error);
     return json({ error: 'Não foi possível marcar agora. Tente de novo em instantes.' }, 503);
   }
 }
