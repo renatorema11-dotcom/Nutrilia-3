@@ -1,5 +1,6 @@
 import { getAdminDb, hasGatewaySecret, json, lastSeenLookup } from '@/lib/firebase-admin';
 import { runWeeklySummaries } from '@/lib/weekly-report';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,8 +11,8 @@ export async function POST(req: Request) {
   try {
     // A resposta só tem contagens: nenhum dado de paciente sai do app.
     return json({ ok: true, ...(await runWeeklySummaries(getAdminDb(), lastSeenLookup)) });
-  } catch {
-    console.error('Resumo semanal: falha ao processar.');
+  } catch (error) {
+    reportServerError('Resumo semanal: falha ao processar.', error);
     return json({ ok: false, error: 'Não foi possível enviar os resumos agora.' }, 500);
   }
 }
