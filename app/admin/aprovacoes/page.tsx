@@ -152,7 +152,10 @@ export default function ApprovalsPage() {
               <ShieldCheck className="w-4 h-4" /> Responsável pelo NutriAli
             </div>
             <h1 className="text-2xl font-bold text-slate-800">Aprovação de nutricionistas</h1>
-            <Link href="/admin/exclusoes" className="text-xs font-semibold text-teal-700 hover:text-teal-800">Ver pedidos de exclusão de conta</Link>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <Link href="/admin/exclusoes" className="text-xs font-semibold text-teal-700 hover:text-teal-800">Ver pedidos de exclusão de conta</Link>
+              <Link href="/admin/erros" className="text-xs font-semibold text-teal-700 hover:text-teal-800">Ver erros do servidor</Link>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {user && (
