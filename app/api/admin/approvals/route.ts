@@ -1,6 +1,7 @@
 import { getAdminDb, json, verifyAccount, type Account } from '@/lib/firebase-admin';
 import { allowRequest } from '@/lib/ai-guard';
 import { adminEmails, decideApproval, isAdmin, listApprovals } from '@/lib/nutritionist-approval';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,8 +37,8 @@ export async function GET(req: Request) {
   if (refused) return refused;
   try {
     return json({ approvals: await listApprovals(getAdminDb()) });
-  } catch {
-    console.error('Aprovação: falha ao listar os cadastros.');
+  } catch (error) {
+    reportServerError('Aprovação: falha ao listar os cadastros.', error);
     return json({ error: 'Não foi possível carregar os cadastros agora.' }, 503);
   }
 }
@@ -64,8 +65,8 @@ export async function POST(req: Request) {
     const result = await decideApproval(getAdminDb(), account.email, body.uid, body.decision);
     if (!result.ok) return json({ error: result.error }, result.status);
     return json({ approval: result.approval, emailed: result.emailed });
-  } catch {
-    console.error('Aprovação: falha ao registrar a decisão.');
+  } catch (error) {
+    reportServerError('Aprovação: falha ao registrar a decisão.', error);
     return json({ error: 'Não foi possível registrar a decisão agora. Tente de novo em instantes.' }, 503);
   }
 }
