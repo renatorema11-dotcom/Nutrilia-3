@@ -1,6 +1,7 @@
 import { getAdminDb, json, verifyAccount } from '@/lib/firebase-admin';
 import { allowRequest } from '@/lib/ai-guard';
 import { submitApproval } from '@/lib/nutritionist-approval';
+import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,8 +28,8 @@ export async function POST(req: Request) {
     const result = await submitApproval(getAdminDb(), account.uid, body);
     if (!result.ok) return json({ error: result.error }, result.status);
     return json({ approval: result.approval, crn: result.crn, notified: result.notified });
-  } catch {
-    console.error('Aprovação: falha ao registrar o pedido.');
+  } catch (error) {
+    reportServerError('Aprovação: falha ao registrar o pedido.', error);
     return json({ error: 'Não foi possível registrar o seu cadastro agora. Tente de novo em instantes.' }, 503);
   }
 }
