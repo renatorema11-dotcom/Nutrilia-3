@@ -2,7 +2,18 @@
 // Ali recebe na conversa. As calorias são sempre uma estimativa visual, dita como faixa; sem estimativa, nenhum
 // número é inventado. Sem segredos e sem acesso ao banco: roda no servidor e a tela usa os tipos e os avisos.
 
-export interface MealPhotoItem { name: string; portion: string; kcal: number | null }
+export interface MealPhotoItem {
+  name: string;
+  portion: string;
+  kcal: number | null;
+  /** Peso estimado pela foto, em gramas (para a conta pela TACO). */
+  grams?: number;
+  /** Alimento da TACO ligado ao item e os valores para o peso estimado (lib/meal-photo-taco.ts). */
+  taco?: { id: number; name: string; kcal: number | null; protein: number | null; carbs: number | null; fat: number | null };
+}
+
+/** Soma pela TACO dos itens ligados à tabela, com as porções estimadas pela foto. */
+export interface MealPhotoTaco { kcal: number; protein: number; carbs: number; fat: number; counted: number; items: number }
 
 export interface MealPhotoAnalysis {
   /** false quando a foto não mostra comida. */
@@ -14,6 +25,8 @@ export interface MealPhotoAnalysis {
   kcalMax: number | null;
   /** Comparação com o plano da nutricionista; vazia quando não há plano. */
   comparison: string;
+  /** Conta pela TACO; ausente quando nenhum item foi ligado à tabela. */
+  taco?: MealPhotoTaco | null;
 }
 
 const MAX_PHOTO_ITEMS = 12;
@@ -60,7 +73,7 @@ Olhe a foto e responda SOMENTE em JSON, em português do Brasil, sem texto antes
 {
   "isFood": true,
   "dish": "descrição curta do prato",
-  "items": [{ "name": "alimento", "portion": "porção estimada em medida caseira e em gramas", "kcal": 130 }],
+  "items": [{ "name": "alimento", "portion": "porção estimada em medida caseira", "gramas": 120, "kcal": 130 }],
   "kcalMin": 520,
   "kcalMax": 680,
   "comparison": "uma ou duas frases comparando o prato com a refeição do plano que combina com este horário"
@@ -68,7 +81,8 @@ Olhe a foto e responda SOMENTE em JSON, em português do Brasil, sem texto antes
 
 Regras:
 - Liste só o que dá para ver na foto. Não invente alimentos; quando estiver em dúvida, escreva "parece".
-- Estime as porções pelo tamanho do prato e dos talheres. "kcal" é a estimativa de cada item.
+- Estime as porções pelo tamanho do prato e dos talheres. "gramas" é o peso estimado de cada item, pronto para comer; "kcal" é a estimativa de cada item.
+- Um alimento por item (arroz, feijão, frango...), com o nome simples e o preparo quando der para ver (cozido, grelhado, frito).
 - "kcalMin" e "kcalMax" são a faixa do prato inteiro, já contando a incerteza de óleo, molhos e tamanho real da porção.
 - Se não der para estimar as calorias, use null em "kcal", "kcalMin" e "kcalMax".
 - Sem plano aprovado, deixe "comparison" vazio. Não prescreva dieta, calorias nem quantidades.
@@ -89,7 +103,9 @@ export function normalizeMealPhoto(data: Record<string, unknown>): MealPhotoAnal
     const item = raw as Record<string, unknown>;
     const name = photoText(item.name, 80);
     const kcal = photoKcal(item.kcal, MAX_ITEM_KCAL);
-    if (name) items.push({ name, portion: photoText(item.portion, 80), kcal: kcal === null ? null : Math.round(kcal) });
+    const rawGrams = item.gramas ?? item.grams;
+    const grams = typeof rawGrams === 'number' && Number.isFinite(rawGrams) && rawGrams >= 1 && rawGrams <= 2000 ? Math.round(rawGrams) : undefined;
+    if (name) items.push({ name, portion: photoText(item.portion, 80), kcal: kcal === null ? null : Math.round(kcal), ...(grams ? { grams } : {}) });
   }
   const dish = photoText(data.dish, 300) || items.map((item) => item.name).join(', ');
   if (!dish) return null;
@@ -119,13 +135,19 @@ export function mealPhotoMessage(analysis: MealPhotoAnalysis): string {
   const lines = [`${PHOTO_TAG} O que aparece na foto: ${analysis.dish}.`];
   if (analysis.items.length) {
     lines.push(`Itens estimados: ${analysis.items.map((item) => {
-      const details = [item.portion, item.kcal === null ? '' : `cerca de ${item.kcal} kcal`].filter(Boolean).join(', ');
+      const kcal = item.taco?.kcal ?? item.kcal;
+      const details = [item.portion, item.grams ? `cerca de ${item.grams} g` : '', kcal === null || kcal === undefined ? '' : `cerca de ${kcal} kcal${typeof item.taco?.kcal === 'number' ? ' pela tabela TACO' : ''}`].filter(Boolean).join(', ');
       return details ? `${item.name} (${details})` : item.name;
     }).join('; ')}.`);
   }
-  lines.push(analysis.kcalMin !== null && analysis.kcalMax !== null
-    ? `Calorias estimadas pela imagem: entre ${analysis.kcalMin} e ${analysis.kcalMax} kcal. É uma estimativa visual, não um valor exato.`
-    : 'Calorias: não foi possível estimar por esta foto. Não diga nenhum número de calorias.');
+  const taco = analysis.taco;
+  if (taco && taco.counted === taco.items) {
+    lines.push(`Calorias pela tabela TACO, com as porções estimadas pela foto: cerca de ${taco.kcal} kcal, com ${taco.protein} g de proteína, ${taco.carbs} g de carboidrato e ${taco.fat} g de gordura. Use estes números, sempre como estimativa: dependem do tamanho real das porções.`);
+  } else {
+    lines.push(analysis.kcalMin !== null && analysis.kcalMax !== null
+      ? `Calorias estimadas pela imagem: entre ${analysis.kcalMin} e ${analysis.kcalMax} kcal. É uma estimativa visual, não um valor exato.`
+      : 'Calorias: não foi possível estimar por esta foto. Não diga nenhum número de calorias.');
+  }
   lines.push(analysis.comparison ? `Comparação com o plano: ${analysis.comparison}` : 'Não há comparação com o plano para esta foto.');
   return lines.join('\n');
 }
