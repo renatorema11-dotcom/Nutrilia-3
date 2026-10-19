@@ -130,6 +130,48 @@ export function searchFoods(query: string, options: { category?: string; limit?:
     .map((entry) => entry.food);
 }
 
+// Medidas caseiras e quantidades não ajudam a achar o alimento ("2 colheres de sopa de aveia" vira "aveia").
+// "sopa", "chá", "café" e "prato" também são alimentos na TACO: só saem dentro da medida ("colher de sopa"). "Xícara de
+// café" sozinha é a bebida; "xícara de chá de leite" é medida.
+const PORTION_PHRASES = /\b((colher(es|inha|inhas)?)\s+(de\s+)?(sopa|cha|cafe|sobremesa)|xicaras?\s+(de\s+)?(cha|cafe)\s+de|copos?\s+(de\s+)?(americano|duplo)|pratos?\s+(de\s+)?(raso|fundo))\b/g;
+const PORTION_WORDS = new Set([
+  'g', 'gr', 'grama', 'kg', 'mg', 'ml', 'l', 'litr', 'colher', 'colherinh', 'xicar', 'fati', 'unidade', 'unid', 'un', 'cop',
+  'conch', 'porca', 'pequen', 'medi', 'escumadeir', 'pegador', 'pote', 'lat', 'pedac', 'rodel', 'punhad', 'tigel', 'cumbuc',
+  'mei', 'gost', 'vontade', 'opcional', 'cerc', 'aproximadamente', 'ras', 'chei', 'bem',
+]);
+
+/**
+ * Opções da TACO para um item do plano ("2 ovos mexidos", "1 concha de feijão carioca"): primeiro as que têm todas as
+ * palavras do alimento; se nenhuma tiver, as que têm mais palavras em comum. A escolha final fica com a IA.
+ */
+export function foodCandidates(text: string, limit = 5): FoodItem[] {
+  const cleaned = foodSearchText(text).replace(PORTION_PHRASES, ' ');
+  const terms = foodWords(cleaned).filter((word) => !/[0-9]/.test(word) && !PORTION_WORDS.has(word)).slice(0, 8);
+  if (!terms.length) return [];
+  const scored: { food: FoodItem; matched: number; score: number }[] = [];
+  for (const entry of indexedFoods()) {
+    let matched = 0;
+    let score = 0;
+    for (const term of terms) {
+      let best = 0;
+      for (const word of entry.words) {
+        if (word === term) best = Math.max(best, 3);
+        else if (word.startsWith(term)) best = Math.max(best, 2);
+        else if (term.length >= 3 && word.includes(term)) best = Math.max(best, 1);
+      }
+      if (best) { matched++; score += best; }
+    }
+    // Uma palavra curta solta ("de", "com") não basta: pelo menos uma palavra de 3 letras ou mais precisa bater.
+    if (!matched || !terms.some((term) => term.length >= 3 && entry.words.some((word) => word.startsWith(term)))) continue;
+    if (entry.words[0] === terms[0] || entry.words[0].startsWith(terms[0])) score += 2;
+    scored.push({ food: entry.food, matched, score });
+  }
+  return scored
+    .sort((x, y) => y.matched - x.matched || y.score - x.score || x.food.id - y.food.id)
+    .slice(0, Math.max(1, Math.min(limit, 10)))
+    .map((entry) => entry.food);
+}
+
 const foodDecimals = (key: NutrientKey, value: number) => {
   if (key === 'kcal' || key === 'retinol') return 0;
   if (['protein', 'carbs', 'fat', 'fiber', 'saturated', 'monounsaturated', 'polyunsaturated'].includes(key)) return 1;

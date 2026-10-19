@@ -15,6 +15,8 @@ export interface Meal {
   time: string;
   name: string;
   items: string[];
+  /** Alimento da TACO e peso de cada item, na ordem de items, para as contas da nutricionista (lib/plan-nutrition.ts). */
+  foods?: ({ taco: number; grams: number } | null)[];
 }
 
 export interface PlanDay {

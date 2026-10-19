@@ -182,7 +182,15 @@ export function aiErrorResponse(error: unknown, where: string): Response {
 
 const shortText = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
 
-export interface AiPlanMeal { time: string; name: string; items: string[] }
+export interface AiPlanMeal {
+  time: string;
+  name: string;
+  items: string[];
+  /** Peso estimado de cada item em gramas, na ordem de items (0 = sem estimativa). Vira "foods" com a TACO. */
+  grams?: number[];
+  /** Alimento da TACO e peso de cada item (lib/plan-nutrition.ts); null quando não deu para ligar à tabela. */
+  foods?: ({ taco: number; grams: number } | null)[];
+}
 export interface AiPlanDay { name: string; meals: AiPlanMeal[] }
 
 /** Confere o plano devolvido pela IA e guarda só o que tem o formato esperado. Lança AiError se não sobrar nada. */
@@ -195,9 +203,16 @@ export function normalizePlan(data: Record<string, unknown>): { days: AiPlanDay[
     for (const rawMeal of Array.isArray(day.meals) ? day.meals.slice(0, 8) : []) {
       if (!rawMeal || typeof rawMeal !== 'object') continue;
       const meal = rawMeal as Record<string, unknown>;
-      const items = (Array.isArray(meal.items) ? meal.items : []).map((item) => shortText(item, 200)).filter(Boolean).slice(0, 12);
+      // O peso de cada item anda junto com ele: item descartado leva o peso junto.
+      const rawGrams = Array.isArray(meal.gramas) ? meal.gramas : Array.isArray(meal.grams) ? meal.grams : [];
+      const pairs = (Array.isArray(meal.items) ? meal.items : [])
+        .map((item, i) => ({ item: shortText(item, 200), grams: rawGrams[i] }))
+        .filter((pair) => pair.item)
+        .slice(0, 12);
+      const items = pairs.map((pair) => pair.item);
+      const grams = pairs.map((pair) => (typeof pair.grams === 'number' && Number.isFinite(pair.grams) && pair.grams > 0 && pair.grams <= 2000 ? Math.round(pair.grams) : 0));
       const name = shortText(meal.name, 80);
-      if (name && items.length) meals.push({ time: shortText(meal.time, 10), name, items });
+      if (name && items.length) meals.push({ time: shortText(meal.time, 10), name, items, ...(grams.some((g) => g > 0) ? { grams } : {}) });
     }
     if (meals.length) days.push({ name: shortText(day.name, 80) || `Dia ${days.length + 1}`, meals });
   }

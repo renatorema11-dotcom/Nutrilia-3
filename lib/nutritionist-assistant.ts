@@ -12,6 +12,7 @@ import { collectWeek } from './weekly-report';
 import type { LastSeenLookup } from './weekly-report';
 import { MOOD_LABELS, moodToday, waterToday } from './daily-log';
 import { cleanNote, listNotesFor, saveNote } from './consultation-notes';
+import { dayTotals } from './plan-nutrition';
 import { reportServerError } from './server-alerts';
 
 const NOT_CONNECTED = 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.';
@@ -704,7 +705,7 @@ export async function attentionList(db: Firestore, nutritionistId: string, lastS
 
 // ───────────── Fase 3: rascunho de plano por voz ─────────────
 
-interface DraftMeal { time: string; name: string; items: string[] }
+interface DraftMeal { time: string; name: string; items: string[]; foods?: unknown[] }
 interface DraftDay { name: string; meals: DraftMeal[] }
 
 /** Gera o rascunho com a IA (na rota: lib/plan-draft.ts). Recebe os dados do paciente sem o nome e as orientações. */
@@ -734,10 +735,16 @@ function draftOf(data: Record<string, unknown>): { days: DraftDay[]; source: str
   if (!plan) return null;
   const days = (Array.isArray(plan.days) ? plan.days : []).filter((day: Record<string, unknown>) => day && Array.isArray(day.meals)).map((day: Record<string, unknown>) => ({
     name: cleanText(day.name, 80) || 'Dia',
-    meals: (day.meals as Record<string, unknown>[]).filter((meal) => meal && typeof meal === 'object').map((meal) => ({
-      time: cleanText(meal.time, 10), name: cleanText(meal.name, 80) || 'Refeição',
-      items: (Array.isArray(meal.items) ? meal.items : []).map((item: unknown) => cleanText(item, 200)).filter(Boolean),
-    })),
+    meals: (day.meals as Record<string, unknown>[]).filter((meal) => meal && typeof meal === 'object').map((meal) => {
+      // O alimento da TACO de cada item anda junto com ele (para o total do dia).
+      const rawFoods = Array.isArray(meal.foods) ? meal.foods : [];
+      const kept = (Array.isArray(meal.items) ? meal.items : []).map((item: unknown, i: number) => ({ item: cleanText(item, 200), food: rawFoods[i] ?? null })).filter((entry) => entry.item);
+      return {
+        time: cleanText(meal.time, 10), name: cleanText(meal.name, 80) || 'Refeição',
+        items: kept.map((entry) => entry.item),
+        ...(rawFoods.length ? { foods: kept.map((entry) => entry.food) } : {}),
+      };
+    }),
   }));
   return { days, source: plan.source === 'ali' ? 'ali' : 'app', createdDate: typeof plan.createdDate === 'string' ? plan.createdDate : '' };
 }
@@ -846,11 +853,14 @@ export async function planDraft(db: Firestore, nutritionistId: string, patientNa
   }
   const describe = (day: DraftDay) => `${day.name}: ${day.meals.map((meal) => `${meal.name}${meal.time ? ` às ${meal.time}` : ''}, ${joinPt(meal.items.slice(0, 4))}`).join('; ')}.`;
   const others = draft.days.slice(1).map((day) => day.name);
+  // Total estimado pela TACO, quando o rascunho tem os alimentos ligados à tabela.
+  const totals = dayTotals(draft.days[0]);
   return {
     ok: true,
     speech: (failed ? 'O último pedido de rascunho não deu certo; este é o rascunho anterior. ' : '')
       + `Rascunho do plano de ${patient.name}${draft.source === 'ali' ? ', feito pela Ali' : ''}, esperando a sua aprovação. `
       + `${clipSpoken(describe(draft.days[0]), 900)}`
+      + (totals ? ` Pela tabela TACO, ${draft.days[0].name} soma cerca de ${totals.kcal.toLocaleString('pt-BR')} calorias e ${totals.protein} gramas de proteína.` : '')
       + (others.length ? ` Também tem ${joinPt(others)}.` : '')
       + ' Para aprovar ou mudar, abra o prontuário no aplicativo.',
     plan: { patientName: patient.name, status: 'draft', replacesApproved: !!data.pendingPlan, days: draft.days },
