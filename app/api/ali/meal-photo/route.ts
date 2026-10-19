@@ -3,6 +3,7 @@ import { getAdminDb } from '@/lib/firebase-admin';
 import { AiError, aiErrorResponse, generateAiJson } from '@/lib/ai';
 import { clip, guardAi, parseImage } from '@/lib/ai-guard';
 import { mealPhotoMessage, mealPhotoPrompt, normalizeMealPhoto, planSummary } from '@/lib/meal-photo';
+import { addMealTaco } from '@/lib/meal-photo-taco';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,8 +27,9 @@ async function patientContext(uid: string): Promise<{ objective: string; plan: s
 }
 
 /**
- * Foto do prato enviada durante a conversa com a Ali. A IA de imagem descreve o prato, estima as calorias e compara
- * com o plano; a tela entrega esse texto à Ali, que comenta por voz. A foto não é guardada pelo app.
+ * Foto do prato enviada durante a conversa com a Ali. A IA de imagem descreve o prato, estima as porções e compara
+ * com o plano; as calorias vêm da tabela TACO quando os itens são achados nela. A tela entrega esse texto à Ali, que
+ * comenta por voz. A foto não é guardada pelo app.
  */
 export async function POST(req: Request) {
   const guard = await guardAi(req, { roles: ['patient'], scope: 'ali-meal-photo', limit: 10, maxChars: 8_500_000 });
@@ -44,8 +46,10 @@ export async function POST(req: Request) {
     const context = await patientContext(guard.caller.uid);
     const when = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date());
     const data = await generateAiJson({ prompt: mealPhotoPrompt({ ...context, when }), image, maxTokens: 900 });
-    const analysis = normalizeMealPhoto(data);
-    if (!analysis) throw new AiError('A inteligência artificial não conseguiu descrever esta foto. Tente com outra foto.', 502);
+    const described = normalizeMealPhoto(data);
+    if (!described) throw new AiError('A inteligência artificial não conseguiu descrever esta foto. Tente com outra foto.', 502);
+    // Calorias e macros pela tabela TACO, com os pesos estimados pela foto; se essa parte falhar, fica a estimativa visual.
+    const analysis = await addMealTaco(described);
     return NextResponse.json({ analysis, message: mealPhotoMessage(analysis) });
   } catch (error) {
     return aiErrorResponse(error, 'foto do prato para a Ali');
