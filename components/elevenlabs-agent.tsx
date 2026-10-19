@@ -234,7 +234,12 @@ function AgentInner({
             {photo.analysis.isFood ? (
               <>
                 <p className="font-medium text-slate-800">{photo.analysis.dish}</p>
-                {photo.analysis.kcalMin !== null && photo.analysis.kcalMax !== null ? (
+                {photo.analysis.taco && photo.analysis.taco.counted === photo.analysis.taco.items ? (
+                  <p className="text-slate-700">
+                    Cerca de {photo.analysis.taco.kcal} kcal
+                    <span className="block text-xs text-slate-500">Pela tabela TACO, com as porções estimadas pela foto.</span>
+                  </p>
+                ) : photo.analysis.kcalMin !== null && photo.analysis.kcalMax !== null ? (
                   <p className="text-slate-700">
                     Cerca de {photo.analysis.kcalMin} a {photo.analysis.kcalMax} kcal
                     <span className="block text-xs text-slate-500">Estimativa pela foto, não é um valor exato.</span>
