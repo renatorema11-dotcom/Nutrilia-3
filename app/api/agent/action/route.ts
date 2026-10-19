@@ -10,6 +10,7 @@ import * as workspace from '@/lib/google-workspace';
 import * as appointments from '@/lib/appointments';
 import * as dailyLog from '@/lib/daily-log';
 import { reportServerError } from '@/lib/server-alerts';
+import { foodInfo } from '@/lib/food-info';
 
 /** Ações do próprio paciente: segredo do gateway + ID token Firebase verificado. */
 function getAdminApp(): App {
@@ -36,14 +37,14 @@ function secretMatches(provided: string | null, expected: string): boolean {
 
 type Action = 'get_patient_data' | 'log_measurement' | 'log_meal' | 'request_appointment'
   | 'get_free_slots' | 'book_appointment' | 'send_plan_email' | 'cancel_appointment' | 'reschedule_appointment'
-  | 'log_water' | 'log_mood';
+  | 'log_water' | 'log_mood' | 'food_info';
 
 const ALLOWED_ACTIONS: Action[] = ['get_patient_data', 'log_measurement', 'log_meal', 'request_appointment',
   'get_free_slots', 'book_appointment', 'send_plan_email', 'cancel_appointment', 'reschedule_appointment',
-  'log_water', 'log_mood'];
+  'log_water', 'log_mood', 'food_info'];
 
 /** Ações que só leem dados; as demais exigem confirmação explícita do paciente. */
-const READ_ONLY_ACTIONS: Action[] = ['get_patient_data', 'get_free_slots'];
+const READ_ONLY_ACTIONS: Action[] = ['get_patient_data', 'get_free_slots', 'food_info'];
 
 interface AgentRequestBody {
   action?: string;
@@ -300,6 +301,14 @@ export async function POST(req: Request) {
         });
         await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
         return speechResponse(`Feito! Enviei o pedido de consulta${preferredDate ? ` para ${preferredDate}` : ''} para a sua nutricionista. Ela vai confirmar o horário com você.`);
+      }
+
+      case 'food_info': {
+        // "Quantas calorias tem…?": a tabela TACO está no próprio app; nada do paciente é lido ou gravado.
+        const info = foodInfo(payload.food, payload.grams);
+        if (!info.ok) return speechError(info.speech, info.status);
+        await audit(db, patientUid, (patient.nutritionistId as string) || null, action);
+        return speechResponse(info.speech, { food: info.food });
       }
 
       case 'get_free_slots': {
