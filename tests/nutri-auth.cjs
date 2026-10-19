@@ -12,6 +12,8 @@ const strip = (file) => stripTypeScriptTypes(fs.readFileSync(path.join(__dirname
   .replace(/^export (?=(async )?function|const|let)/gm, '');
 // A regra de "cadastro aprovado" é a de verdade (lib/nutritionist-approval.ts), não uma cópia.
 const code = `${strip('lib/firebase-admin.ts')}\n${strip('lib/nutritionist-approval.ts')}\n${strip('app/api/agent/nutritionist-action/route.ts')}\nthis.POST = POST;`;
+// Tabela TACO real (lib/food-info.ts) para a pergunta "quantas calorias tem…?".
+const { foodInfo } = require('./fakes.cjs').loadLib(['taco-foods.ts', 'food-table.ts', 'food-info.ts'], {});
 const secret = 'local-test-secret-not-for-deployment-123456';
 const cfg = { projectId: 'nutri-test', firestoreDatabaseId: 'named-test-db' };
 const reports = [];
@@ -55,6 +57,7 @@ async function test(name, options, status, inspect = () => {}) {
     Buffer, Request, Response, console: { error: () => {} }, reportServerError: () => {}, process: { env }, timingSafeEqual, firebaseConfig: cfg, assistant,
     // O rascunho do plano usa a IA (lib/plan-draft.ts) e o "after" do Next; aqui os dois são de mentira.
     generatePlanDraft: async () => ({ days: [] }), after: (task) => events.push(['after', typeof task]),
+    foodInfo,
     getApps: () => [], cert: (a) => a, initializeApp: () => ({ name: 'test' }),
     getAuth: () => ({ verifyIdToken: async (token, revocation) => {
       events.push(['verify', token, revocation]);
@@ -185,6 +188,12 @@ async function test(name, options, status, inspect = () => {}) {
     assert.equal(json.plan.status, 'running');
     assert.ok(!JSON.stringify(events.find((e) => e[0] === 'audit')[2]).includes('Sem lactose'));
   });
+  await test('Calorias de um alimento: leitura pela TACO, sem chamar a assistente', { body: { action: 'food_info', payload: { food: 'arroz', grams: 150 } } }, 200, (_, json, acted) => {
+    assert.match(json.speech, /^Pela tabela TACO, 150 gramas de Arroz, tipo 1, cozido têm cerca de 192 calorias/);
+    assert.equal(json.food.taco, 3);
+    assert.equal(acted.length, 0);
+  });
+  await test('Calorias de um alimento que a TACO não tem', { body: { action: 'food_info', payload: { food: 'whey' } } }, 404);
   await test('Ler o rascunho é leitura e recebe só o nome', { body: { action: 'get_plan_draft', payload: { patientName: 'Ana', text: 'x' } } }, 200, (_, __, acted) => {
     assert.deepEqual(acted[0], ['planDraft', 'nutri-A', 'Ana']);
   });

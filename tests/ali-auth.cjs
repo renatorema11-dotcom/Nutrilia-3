@@ -8,6 +8,8 @@ const code = stripTypeScriptTypes(source.replace(/^import .*;\r?\n/gm,'').replac
 // Regras reais de água e humor (lib/daily-log.ts), carregadas sem as importações.
 const dailyLog = vm.runInContext('({ WATER_GOAL_ML, WATER_MAX_ML, MOOD_LABELS, isMood, dailyKey, isSameDay, waterToday, moodToday })',
   require('./fakes.cjs').loadLib(['agenda.ts', 'daily-log.ts'], {}));
+// Tabela TACO real (lib/food-info.ts) para a pergunta "quantas calorias tem…?".
+const { foodInfo } = require('./fakes.cjs').loadLib(['taco-foods.ts', 'food-table.ts', 'food-info.ts'], {});
 const secret = 'local-test-secret-not-for-deployment-123456';
 const cfg = {projectId:'nutri-test',firestoreDatabaseId:'named-test-db'};
 let reports=[];
@@ -34,7 +36,7 @@ async function test(name,options,status,inspect=()=>{}) {
     rescheduleNextAppointment:async (db,uid,start)=>{events.push(['reschedule',uid,start]);return {ok:true,speech:'Consulta remarcada.',appointment:{label:'quarta',start,mode:'online'}};},
     ...options.appointments,
   };
-  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},reportServerError:()=>{},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,appointments,dailyLog,
+  const context=vm.createContext({Buffer,Request,console:{error:()=>{}},reportServerError:()=>{},Intl,process:{env},timingSafeEqual,firebaseConfig:cfg,workspace,appointments,dailyLog,foodInfo,
     NextResponse:{json:(body,init={})=>({body,status:init.status||200,headers:init.headers})},
     getApps:()=>[],cert:a=>a,initializeApp:()=>({name:'test'}),
     getAuth:()=>({verifyIdToken:async(token,revocation)=>{
@@ -120,6 +122,13 @@ async function test(name,options,status,inspect=()=>{}) {
     assert.equal(res.body.slots[0].start,'2026-10-13T14:00:00-03:00');
   });
   await test('Horários livres sem nutricionista vinculada',{patient:{nutritionistId:null},body:{action:'get_free_slots'}},422);
+  await test('Calorias de um alimento: leitura pela TACO, sem confirmação',{body:{action:'food_info',payload:{food:'banana prata',grams:'120'}}},200,(ev,res)=>{
+    assert.match(res.body.speech,/^Pela tabela TACO, 120 gramas de Banana, prata, crua têm cerca de 118 calorias/);
+    assert.equal(res.body.food.taco,182);
+    assert.ok(ev.some(e=>Array.isArray(e)&&e[0]==='add'),'a consulta entra no registro de uso');
+  });
+  await test('Calorias de um alimento que a TACO não tem',{body:{action:'food_info',payload:{food:'whey protein'}}},404);
+  await test('Calorias sem dizer o alimento',{body:{action:'food_info',payload:{}}},422);
   await test('Marcar consulta exige horário em texto',{body:{action:'book_appointment',confirmed:true,payload:{start:['2026-10-13T14:00:00-03:00']}}},422);
   await test('Marcar consulta usa e-mail do prontuário, nunca o do pedido',{patient:{email:'paciente@exemplo.com'},body:{action:'book_appointment',confirmed:true,payload:{start:'2026-10-13T14:00:00-03:00',email:'outra@pessoa.com'}}},200,(ev,res)=>{
     const call=ev.find(e=>e[0]==='book')[1];

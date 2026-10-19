@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const { loadLib } = require('./fakes.cjs');
 
-const context = loadLib(['taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'ai.ts', 'plan-draft.ts'], {
+const context = loadLib(['taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'ai.ts', 'taco-match.ts', 'plan-draft.ts'], {
   JSON, console: { warn: () => {}, error: () => {} }, process: { env: {} },
 });
 const run = (code) => vm.runInContext(code, context);
