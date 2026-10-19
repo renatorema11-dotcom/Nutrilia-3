@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { aiErrorResponse, generateAiJson, normalizePlan } from "@/lib/ai";
+import { aiErrorResponse } from "@/lib/ai";
 import { clip, guardAi } from "@/lib/ai-guard";
-import { planRequest } from "@/lib/plan-draft";
+import { generatePlanDraft } from "@/lib/plan-draft";
 
 export const runtime = 'nodejs';
 
@@ -15,11 +15,9 @@ export async function POST(req: Request) {
     const patientContext = clip(guard.body.patientContext, 3000);
     const instructions = clip(guard.body.instructions, 2000);
 
-    // O mesmo pedido que a Ali da nutricionista usa para montar o rascunho por voz (lib/plan-draft.ts).
-    const data = await generateAiJson(planRequest(patientContext, instructions));
-
-    // Só segue para a tela o que veio no formato certo; se não vier nada aproveitável, a nutricionista é avisada.
-    return NextResponse.json({ data: normalizePlan(data) });
+    // O mesmo rascunho que a Ali da nutricionista monta por voz (lib/plan-draft.ts), com os alimentos da TACO para as
+    // contas de calorias e macros. Só segue para a tela o que veio no formato certo.
+    return NextResponse.json({ data: await generatePlanDraft(patientContext, instructions) });
   } catch (error) {
     return aiErrorResponse(error, 'geração de plano');
   }
