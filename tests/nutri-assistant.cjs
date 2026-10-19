@@ -6,7 +6,7 @@ const { createFirestore, createGoogle, loadLib } = require('./fakes.cjs');
 
 const { store, db, FieldValue } = createFirestore();
 const google = createGoogle();
-const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'daily-log.ts', 'consultation-notes.ts', 'nutritionist-assistant.ts'], { FieldValue, fetch: google.fetch });
+const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'daily-log.ts', 'consultation-notes.ts', 'taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'nutritionist-assistant.ts'], { FieldValue, fetch: google.fetch });
 context.db = db;
 const run = (code) => vm.runInContext(code, context);
 const call = (fn, input, extra = '') => { context.input = input; return run(`${fn}(db, 'nutri-1', input${extra})`); };
@@ -508,6 +508,19 @@ context.now = NOW;
     assert.equal(read.plan.replacesApproved, true);
     assert.match((await run("patientSummary(db, 'nutri-1', name)")).speech, /plano aprovado, com um rascunho novo esperando a sua aprovação/);
     assert.ok((await run("attentionList(db, 'nutri-1', lastSeen, now)")).attention.find((row) => row.name === 'Ana Souza').reasons.includes('o plano está esperando a sua aprovação'));
+  });
+
+  await check('rascunho com os alimentos ligados à TACO: a Ali diz o total estimado do dia', async () => {
+    const ana = store.get('patients/p-ana');
+    store.set('patients/p-ana', { ...ana, pendingPlan: { ...ana.pendingPlan, days: [{ name: 'Segunda a sexta', meals: [
+      { time: '12:30', name: 'Almoço', items: ['Arroz integral', 'Feijão carioca', 'Item fora da tabela'], foods: [{ taco: 1, grams: 150 }, { taco: 561, grams: 100 }, null] },
+    ] }] } });
+    context.name = 'Ana Souza';
+    const read = await run("planDraft(db, 'nutri-1', name, now)");
+    // Arroz integral cozido 150 g (186 kcal; 3,9 g de proteína) + feijão carioca cozido 100 g (76 kcal; 4,8 g).
+    assert.match(read.speech, /Pela tabela TACO, Segunda a sexta soma cerca de 262 calorias e 9 gramas de proteína./);
+    assert.deepEqual(JSON.parse(JSON.stringify(read.plan.days[0].meals[0].foods)), [{ taco: 1, grams: 150 }, { taco: 561, grams: 100 }, null]);
+    store.set('patients/p-ana', ana);
   });
 
   await check('rascunho que falhou ou ficou parado: a Ali conta e oferece tentar de novo; pedido mais novo vence', async () => {
