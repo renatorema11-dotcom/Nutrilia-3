@@ -9,6 +9,7 @@ import { getPatientById, updatePatient, deletePatient, Patient, Plan } from '@/l
 import { ApiError, postJson } from '@/lib/api-client';
 import { AliFoodLogs } from '@/components/ali-food-logs';
 import { ConsultationNotes } from '@/components/consultation-notes';
+import { PlanDayTotals, PlanMealTotals } from '@/components/plan-nutrition';
 
 export default function PatientProfile() {
   const routeParams = useParams();
@@ -338,14 +339,16 @@ export default function PatientProfile() {
                   {patient.pendingPlan.days?.map((day, idx) => (
                     <div key={idx} className="space-y-3">
                       <h4 className="font-bold text-slate-800 border-b border-amber-200 pb-2">{day.name}</h4>
+                      <PlanDayTotals day={day} />
                       {day.meals?.map((meal, mIdx) => (
                         <div key={mIdx} className="bg-white p-3 rounded-lg flex gap-4 items-start border border-amber-100">
                           <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-slate-700 flex items-center shrink-0 border border-slate-200">
                             <Clock className="h-3.5 w-3.5 mr-1 text-amber-600" /> {meal.time}
                           </div>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="font-semibold text-sm text-slate-900">{meal.name}</p>
                             <p className="text-sm text-slate-600 mt-1">{Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}</p>
+                            <PlanMealTotals meal={meal} />
                           </div>
                         </div>
                       ))}
@@ -389,14 +392,16 @@ export default function PatientProfile() {
                   {currentPlan.days?.map((day: any, idx: number) => (
                     <div key={idx} className="space-y-4">
                       <h4 className="font-bold text-slate-800 border-b pb-2">{day.name}</h4>
+                      <PlanDayTotals day={day} />
                       {day.meals?.map((meal: any, mIdx: number) => (
                         <div key={mIdx} className="bg-slate-50 p-3 rounded-lg flex gap-4 items-start border border-slate-100">
                           <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-slate-700 flex items-center shrink-0 border border-slate-200">
                             <Clock className="h-3.5 w-3.5 mr-1 text-emerald-600" /> {meal.time}
                           </div>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="font-semibold text-sm text-slate-900">{meal.name}</p>
                             <p className="text-sm text-slate-600 mt-1">{Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}</p>
+                            <PlanMealTotals meal={meal} />
                           </div>
                         </div>
                       ))}
@@ -427,14 +432,16 @@ export default function PatientProfile() {
                   {draftPlan.days?.map((day: any, idx: number) => (
                     <div key={idx} className="space-y-4">
                       <h4 className="font-bold text-slate-800 border-b pb-2">{day.name}</h4>
+                      <PlanDayTotals day={day} />
                       {day.meals?.map((meal: any, mIdx: number) => (
                         <div key={mIdx} className="bg-slate-50 p-3 rounded-lg flex gap-4 items-start border border-slate-100">
                           <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-slate-700 flex items-center shrink-0 border border-slate-200">
                             <Clock className="h-3.5 w-3.5 mr-1 text-amber-600" /> {meal.time}
                           </div>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="font-semibold text-sm text-slate-900">{meal.name}</p>
                             <p className="text-sm text-slate-600 mt-1">{Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}</p>
+                            <PlanMealTotals meal={meal} />
                           </div>
                         </div>
                       ))}
