@@ -6,6 +6,7 @@ import { getAdminApp, getAdminDb, hasGatewaySecret, json, lastSeenLookup } from 
 import * as assistant from '@/lib/nutritionist-assistant';
 import { approvalOf } from '@/lib/nutritionist-approval';
 import { generatePlanDraft } from '@/lib/plan-draft';
+import { foodInfo } from '@/lib/food-info';
 import { reportServerError } from '@/lib/server-alerts';
 
 export const runtime = 'nodejs';
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
 
 /** Ações que só leem dados; as demais exigem o "sim" da nutricionista. */
 const READ_ONLY_ACTIONS = ['list_patients', 'get_patient', 'get_agenda', 'list_contacts', 'get_week_summary',
-  'get_consultation_brief', 'get_attention_list', 'list_appointment_requests', 'get_consultation_notes', 'get_plan_draft'] as const;
+  'get_consultation_brief', 'get_attention_list', 'list_appointment_requests', 'get_consultation_notes', 'get_plan_draft', 'food_info'] as const;
 
 /** Ações que marcam, mudam, gravam ou enviam algo. */
 const WRITE_ACTIONS = ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email',
@@ -96,6 +97,8 @@ export async function POST(req: Request) {
       // A IA leva até um minuto: o rascunho é montado depois da resposta, para a voz não ficar esperando.
       case 'create_plan_draft': result = await assistant.createPlanDraft(db, uid, payload, generatePlanDraft, (task) => after(task)); break;
       case 'get_plan_draft': result = await assistant.planDraft(db, uid, payload.patientName); break;
+      // "Quantas calorias tem…?": consulta à tabela TACO, que está no próprio app.
+      case 'food_info': result = foodInfo(payload.food, payload.grams); break;
       default: return reply(false, 'Ação não reconhecida.', 400);
     }
     if (!result.ok) return reply(false, result.speech, result.status);
