@@ -2,18 +2,19 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Bot, CalendarCheck, CheckCircle2, Loader2, Mail, Plus, Save, Trash2, Unplug, AlertTriangle } from 'lucide-react';
+import { Bot, CalendarCheck, CheckCircle2, FileSpreadsheet, Loader2, Mail, Plus, Save, Trash2, Unplug, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button } from '@/components/ui';
 import { useAuth } from '@/components/auth-provider';
 import { auth } from '@/lib/firebase';
 import { ALI_LIMITS, MAX_CONTACTS, WEEKDAY_NAMES, defaultAliSettings, describeAttendance, sanitizeContacts, type AliContact, type AliSettings, type ConsultationMode } from '@/lib/ali-settings';
 
-interface GoogleStatus { configured: boolean; connected: boolean; email: string; needsReconnect: boolean }
+interface GoogleStatus { configured: boolean; connected: boolean; email: string; needsReconnect: boolean; sheets: boolean }
 
 const GOOGLE_MESSAGES: Record<string, { ok: boolean; text: string }> = {
-  conectado: { ok: true, text: 'Google conectado! A Ali já pode usar a sua agenda e o seu Gmail com os seus pacientes.' },
+  conectado: { ok: true, text: 'Google conectado! A Ali já pode usar a sua agenda e o seu Gmail com os seus pacientes e criar planilhas para você.' },
+  'conectado-sem-planilhas': { ok: false, text: 'Google conectado, mas sem a permissão das planilhas: a Ali usa a sua agenda e o seu Gmail, mas não cria planilhas. Para liberar, clique em Conectar de novo e deixe a permissão das planilhas marcada.' },
   cancelado: { ok: false, text: 'A conexão com o Google foi cancelada. Nada foi alterado.' },
-  permissoes: { ok: false, text: 'Para a Ali funcionar, marque todas as permissões pedidas (agenda e envio de e-mail) e conecte de novo.' },
+  permissoes: { ok: false, text: 'Para a Ali funcionar, marque as permissões da agenda e do envio de e-mail (e a das planilhas, se quiser que ela crie planilhas) e conecte de novo.' },
   expirado: { ok: false, text: 'A conexão demorou ou foi aberta em outro navegador. Clique em Conectar Google de novo.' },
   'nao-configurado': { ok: false, text: 'A conexão com o Google ainda não foi ativada no servidor do NutriAli.' },
   erro: { ok: false, text: 'Não foi possível conectar o Google agora. Tente de novo em instantes.' },
@@ -144,19 +145,39 @@ function MinhaAliContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-teal-600" /> Google: Agenda e Gmail</CardTitle>
+          <CardTitle className="flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-teal-600" /> Google: Agenda, Gmail e Planilhas</CardTitle>
           <CardDescription>
             Com o seu Google conectado, a Ali vê seus horários livres, marca a consulta com link do Meet, manda a confirmação
-            e o plano por e-mail a partir do seu Gmail e te avisa de cada pedido.
+            e o plano por e-mail a partir do seu Gmail e te avisa de cada pedido. Quando você pede, ela também cria planilhas no seu
+            Google Planilhas (pacientes, evolução do peso, plano alimentar e agenda); o NutriAli só mexe nas planilhas que ele mesmo cria.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {google?.connected ? (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <p className="text-sm text-slate-700 flex items-center gap-2">
-                <Mail className="w-4 h-4 text-teal-600 shrink-0" /> Conectado como <strong className="break-all">{google.email || 'sua conta Google'}</strong>
-              </p>
-              <Button variant="outline" onClick={disconnectGoogle} className="text-sm gap-2"><Unplug className="w-4 h-4" /> Desconectar</Button>
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-sm text-slate-700 flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-teal-600 shrink-0" /> Conectado como <strong className="break-all">{google.email || 'sua conta Google'}</strong>
+                </p>
+                <Button variant="outline" onClick={disconnectGoogle} className="text-sm gap-2"><Unplug className="w-4 h-4" /> Desconectar</Button>
+              </div>
+              {google.sheets ? (
+                <p className="text-sm text-slate-700 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-teal-600 shrink-0" /> Planilhas liberadas: é só pedir para a Ali.
+                </p>
+              ) : (
+                // Conexões feitas antes das planilhas (ou sem essa permissão marcada) precisam conectar de novo.
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <p className="text-sm text-amber-900 flex items-start gap-2">
+                    <FileSpreadsheet className="w-4 h-4 shrink-0 mt-0.5" />
+                    A Ali agora também cria planilhas no seu Google Planilhas. Para liberar, conecte o Google de novo e deixe a permissão das planilhas marcada.
+                  </p>
+                  <Button onClick={connect} disabled={connecting || !google.configured} className="gap-2 w-full sm:w-auto text-sm">
+                    {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                    Conectar de novo e liberar as planilhas
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
