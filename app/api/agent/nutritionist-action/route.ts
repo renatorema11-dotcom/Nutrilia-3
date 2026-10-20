@@ -18,7 +18,8 @@ const READ_ONLY_ACTIONS = ['list_patients', 'get_patient', 'get_agenda', 'list_c
 
 /** Ações que marcam, mudam, gravam ou enviam algo. */
 const WRITE_ACTIONS = ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email',
-  'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft'] as const;
+  'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft',
+  'create_spreadsheet'] as const;
 
 /** Ações da Ali da nutricionista: segredo do gateway + ID token Firebase de uma conta de nutricionista. */
 type Action = (typeof READ_ONLY_ACTIONS)[number] | (typeof WRITE_ACTIONS)[number];
@@ -99,6 +100,8 @@ export async function POST(req: Request) {
       case 'get_plan_draft': result = await assistant.planDraft(db, uid, payload.patientName); break;
       // "Quantas calorias tem…?": consulta à tabela TACO, que está no próprio app.
       case 'food_info': result = foodInfo(payload.food, payload.grams); break;
+      // Planilha no Google Planilhas dela (pacientes, peso, plano ou agenda); o link vai para o e-mail dela.
+      case 'create_spreadsheet': result = await assistant.createSpreadsheet(db, uid, payload, lastSeenLookup); break;
       default: return reply(false, 'Ação não reconhecida.', 400);
     }
     if (!result.ok) return reply(false, result.speech, result.status);
