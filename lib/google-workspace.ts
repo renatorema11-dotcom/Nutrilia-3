@@ -1,4 +1,4 @@
-// Integração de cada nutricionista com o próprio Google (Agenda e Gmail). Somente no servidor.
+// Integração de cada nutricionista com o próprio Google (Agenda, Gmail e Planilhas). Somente no servidor.
 // A autorização fica criptografada em googleConnections/{uid}; o navegador nunca a vê.
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
@@ -13,8 +13,13 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/calendar.freebusy',
   'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/drive.file',
 ];
-const REQUIRED_SCOPES = GOOGLE_SCOPES.filter((s) => s.startsWith('https://'));
+/** Planilhas: o NutriAli só enxerga as planilhas que ele mesmo criou no Drive dela (o resto do Drive fica de fora). */
+export const SHEETS_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+/** Sem agenda e Gmail a Ali não funciona; a permissão das planilhas é opcional (quem desmarcar continua com o resto). */
+const REQUIRED_SCOPES = GOOGLE_SCOPES.filter((s) => s.startsWith('https://') && s !== SHEETS_SCOPE);
+const grantedScopes = (value: unknown): string[] => (Array.isArray(value) ? value : []).filter((s): s is string => typeof s === 'string' && GOOGLE_SCOPES.includes(s));
 
 export interface GoogleConfig { clientId: string; clientSecret: string; tokenKey: string; redirectUri: string }
 
@@ -104,7 +109,7 @@ async function tokenRequest(params: Record<string, string>) {
 
 /** Troca o código pela autorização e grava a conexão da nutricionista. */
 export async function completeConnection(db: Firestore, cfg: GoogleConfig, uid: string, code: string):
-  Promise<{ ok: true; email: string } | { ok: false; reason: 'exchange' | 'scopes' | 'no_refresh' }> {
+  Promise<{ ok: true; email: string; sheets: boolean } | { ok: false; reason: 'exchange' | 'scopes' | 'no_refresh' }> {
   const { ok, json } = await tokenRequest({
     code, client_id: cfg.clientId, client_secret: cfg.clientSecret,
     redirect_uri: cfg.redirectUri, grant_type: 'authorization_code',
@@ -124,14 +129,14 @@ export async function completeConnection(db: Firestore, cfg: GoogleConfig, uid: 
   } catch { /* sem e-mail */ }
   await db.collection('googleConnections').doc(uid).set({
     email,
-    scopes: REQUIRED_SCOPES,
+    scopes: grantedScopes(scopes),
     refreshToken: encrypt(cfg, json.refresh_token),
     status: 'connected',
     connectedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
   accessCache.delete(uid);
-  return { ok: true, email };
+  return { ok: true, email, sheets: scopes.includes(SHEETS_SCOPE) };
 }
 
 export async function revokeToken(token: string) {
@@ -148,7 +153,7 @@ export async function disconnect(db: Firestore, cfg: GoogleConfig | null, uid: s
   accessCache.delete(uid);
 }
 
-export interface ConnectionStatus { configured: boolean; connected: boolean; email: string; needsReconnect: boolean }
+export interface ConnectionStatus { configured: boolean; connected: boolean; email: string; needsReconnect: boolean; sheets: boolean }
 
 export async function connectionStatus(db: Firestore, uid: string): Promise<ConnectionStatus> {
   const configured = !!getGoogleConfig();
@@ -159,19 +164,21 @@ export async function connectionStatus(db: Firestore, uid: string): Promise<Conn
     connected: snap.exists && data.status === 'connected',
     email: typeof data.email === 'string' ? data.email : '',
     needsReconnect: snap.exists && data.status === 'needs_reconnect',
+    // Conexões feitas antes das planilhas não têm essa permissão: é preciso conectar de novo.
+    sheets: snap.exists && data.status === 'connected' && grantedScopes(data.scopes).includes(SHEETS_SCOPE),
   };
 }
 
-const accessCache = new Map<string, { token: string; email: string; expiresAt: number }>();
+const accessCache = new Map<string, { token: string; email: string; scopes: string[]; expiresAt: number }>();
 
-type Access = { ok: true; token: string; email: string } | { ok: false; reason: 'not_configured' | 'not_connected' | 'needs_reconnect' | 'unavailable' };
+type Access = { ok: true; token: string; email: string; scopes: string[] } | { ok: false; reason: 'not_configured' | 'not_connected' | 'needs_reconnect' | 'unavailable' };
 
 /** Token de acesso da nutricionista, renovado com a autorização guardada. */
 export async function getAccess(db: Firestore, uid: string): Promise<Access> {
   const cfg = getGoogleConfig();
   if (!cfg) return { ok: false, reason: 'not_configured' };
   const cached = accessCache.get(uid);
-  if (cached && cached.expiresAt > Date.now() + 60_000) return { ok: true, token: cached.token, email: cached.email };
+  if (cached && cached.expiresAt > Date.now() + 60_000) return { ok: true, token: cached.token, email: cached.email, scopes: cached.scopes };
   const ref = db.collection('googleConnections').doc(uid);
   const snap = await ref.get();
   if (!snap.exists) return { ok: false, reason: 'not_connected' };
@@ -192,9 +199,10 @@ export async function getAccess(db: Firestore, uid: string): Promise<Access> {
     return { ok: false, reason: 'unavailable' };
   }
   const email = typeof data.email === 'string' ? data.email : '';
+  const scopes = grantedScopes(data.scopes);
   const expiresIn = typeof json.expires_in === 'number' ? json.expires_in : 3000;
-  accessCache.set(uid, { token: json.access_token, email, expiresAt: Date.now() + expiresIn * 1000 });
-  return { ok: true, token: json.access_token, email };
+  accessCache.set(uid, { token: json.access_token, email, scopes, expiresAt: Date.now() + expiresIn * 1000 });
+  return { ok: true, token: json.access_token, email, scopes };
 }
 
 // ───────────── Agenda e Gmail ─────────────

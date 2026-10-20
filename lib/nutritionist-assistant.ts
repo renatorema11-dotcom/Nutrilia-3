@@ -6,13 +6,15 @@ import type { AliContact } from './ali-settings';
 import { describeDates, isFree, localDateKey, parseLocalDateTime, slotLabel, toOffsetIso } from './agenda';
 import type { Interval } from './agenda';
 import { cancelNextByNutritionist, rescheduleNextByNutritionist } from './appointments';
-import { APPOINTMENTS_COLLECTION, CALENDAR_EVENTS_URL, busyIntervals, connectionStatus, createAppointment, emailLayout, escapeHtml, getAccess, googleRequest, isValidEmail, loadSettings, newNonce, p, sendMail, sendPlanEmail } from './google-workspace';
+import { APPOINTMENTS_COLLECTION, CALENDAR_EVENTS_URL, SHEETS_SCOPE, busyIntervals, connectionStatus, createAppointment, emailLayout, escapeHtml, getAccess, googleRequest, isValidEmail, loadSettings, newNonce, p, sendMail, sendPlanEmail } from './google-workspace';
 import type { ActionResult } from './google-workspace';
 import { collectWeek } from './weekly-report';
 import type { LastSeenLookup } from './weekly-report';
 import { MOOD_LABELS, moodToday, waterToday } from './daily-log';
 import { cleanNote, listNotesFor, saveNote } from './consultation-notes';
 import { dayTotals } from './plan-nutrition';
+import { agendaSheet, createSheet, patientsSheet, planSheet, weightSheet } from './spreadsheets';
+import type { AgendaEntry, PatientSheetRow, SheetSpec, WeightEntry } from './spreadsheets';
 import { reportServerError } from './server-alerts';
 
 const NOT_CONNECTED = 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.';
@@ -727,13 +729,9 @@ const planJobOf = (value: unknown): PlanJob | null => {
 
 const jobRunning = (job: PlanJob | null, now: Date) => !!job && job.status === 'running' && now.getTime() - Date.parse(job.startedAt) < PLAN_JOB_STALE_MS;
 
-/** O rascunho esperando aprovação: o novo ao lado de um plano aprovado (pendingPlan) ou o plano ainda não aprovado. */
-function draftOf(data: Record<string, unknown>): { days: DraftDay[]; source: string; createdDate: string } | null {
-  const pending = data.pendingPlan && typeof data.pendingPlan === 'object' ? data.pendingPlan as Record<string, unknown> : null;
-  const current = data.currentPlan && typeof data.currentPlan === 'object' ? data.currentPlan as Record<string, unknown> : null;
-  const plan = pending || (current && current.status !== 'approved' ? current : null);
-  if (!plan) return null;
-  const days = (Array.isArray(plan.days) ? plan.days : []).filter((day: Record<string, unknown>) => day && Array.isArray(day.meals)).map((day: Record<string, unknown>) => ({
+/** Dias do plano gravado, limpos; o alimento da TACO de cada item anda junto com ele. */
+function planDaysOf(plan: Record<string, unknown>): DraftDay[] {
+  return (Array.isArray(plan.days) ? plan.days : []).filter((day: Record<string, unknown>) => day && Array.isArray(day.meals)).map((day: Record<string, unknown>) => ({
     name: cleanText(day.name, 80) || 'Dia',
     meals: (day.meals as Record<string, unknown>[]).filter((meal) => meal && typeof meal === 'object').map((meal) => {
       // O alimento da TACO de cada item anda junto com ele (para o total do dia).
@@ -746,7 +744,15 @@ function draftOf(data: Record<string, unknown>): { days: DraftDay[]; source: str
       };
     }),
   }));
-  return { days, source: plan.source === 'ali' ? 'ali' : 'app', createdDate: typeof plan.createdDate === 'string' ? plan.createdDate : '' };
+}
+
+/** O rascunho esperando aprovação: o novo ao lado de um plano aprovado (pendingPlan) ou o plano ainda não aprovado. */
+function draftOf(data: Record<string, unknown>): { days: DraftDay[]; source: string; createdDate: string } | null {
+  const pending = data.pendingPlan && typeof data.pendingPlan === 'object' ? data.pendingPlan as Record<string, unknown> : null;
+  const current = data.currentPlan && typeof data.currentPlan === 'object' ? data.currentPlan as Record<string, unknown> : null;
+  const plan = pending || (current && current.status !== 'approved' ? current : null);
+  if (!plan) return null;
+  return { days: planDaysOf(plan), source: plan.source === 'ali' ? 'ali' : 'app', createdDate: typeof plan.createdDate === 'string' ? plan.createdDate : '' };
 }
 
 export interface PlanDraftInput { patientName?: unknown; text?: unknown; force?: unknown }
@@ -867,6 +873,197 @@ export async function planDraft(db: Firestore, nutritionistId: string, patientNa
   };
 }
 
+// ───────────── Planilhas no Google Planilhas da nutricionista ─────────────
+
+const DAILY_SHEET_LIMIT = 20;
+const AGENDA_SHEET_DAYS = 7;
+const AGENDA_SHEET_MAX_DAYS = 31;
+const NO_SHEETS = 'Para eu criar planilhas, entre em Minha Ali e clique em Conectar Google de novo, deixando marcada a permissão das planilhas. A agenda e o Gmail continuam funcionando.';
+
+type SheetKind = 'patients' | 'weights' | 'plan' | 'agenda';
+const SHEET_KINDS: Record<string, SheetKind> = { patients: 'patients', pacientes: 'patients', weights: 'weights', peso: 'weights', plan: 'plan', plano: 'plan', agenda: 'agenda' };
+
+export interface SpreadsheetInput { sheet?: unknown; patientName?: unknown; draft?: unknown; date?: unknown; days?: unknown }
+
+type Built = { ok: true; spec: SheetSpec; speech: (chart: boolean) => string } | { ok: false; result: ActionResult };
+
+/** Dia AAAA-MM-DD de um instante gravado, no fuso dela ('' quando não dá para ler). */
+const dayOfIso = (value: unknown, timeZone: string) => {
+  const at = typeof value === 'string' ? new Date(value) : null;
+  return at && Number.isFinite(at.getTime()) ? localDateKey(at, timeZone) : '';
+};
+
+const numberOrNull = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+/** Medições com data e peso válidos (com a gordura e quem registrou), da mais antiga para a mais recente. */
+function weightEntriesOf(data: Record<string, unknown>): WeightEntry[] {
+  return (Array.isArray(data.measurements) ? data.measurements : [])
+    .filter((m: Record<string, unknown>) => m && typeof m.date === 'string' && MEASURE_DATE_RE.test(m.date) && typeof m.weight === 'number')
+    .map((m: Record<string, unknown>) => ({ date: m.date as string, weight: m.weight as number, bodyFat: numberOrNull(m.bodyFat), source: typeof m.source === 'string' ? m.source : '' }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+async function patientsSpec(db: Firestore, nutritionistId: string, lastSeen: LastSeenLookup, timeZone: string, today: string): Promise<Built> {
+  const snap = await db.collection('patients').where('nutritionistId', '==', nutritionistId).get();
+  const docs = snap.docs.filter((doc) => typeof doc.data()?.name === 'string' && doc.data().name.trim());
+  if (!docs.length) return { ok: false, result: { ok: false, status: 409, speech: 'Você ainda não tem pacientes vinculados no NutriAli para eu colocar na planilha.' } };
+  // Último acesso: só para quem tem login; sem a informação, a coluna fica vazia.
+  const seen = await lastSeen(docs.map((doc) => doc.id)).catch(() => null);
+  const rows: PatientSheetRow[] = docs.map((doc) => {
+    const d = doc.data() || {};
+    const measures = weightEntriesOf(d);
+    const last = measures.length ? measures[measures.length - 1] : null;
+    const status = d.currentPlan?.status;
+    const at = seen && seen.has(doc.id) ? seen.get(doc.id) : undefined;
+    return {
+      name: String(d.name).trim(),
+      email: isValidEmail(d.email) ? d.email : null,
+      objective: typeof d.objective === 'string' ? d.objective : '',
+      initialWeight: numberOrNull(d.initialWeight) ?? (measures.length ? measures[0].weight : null),
+      weight: last ? last.weight : numberOrNull(d.weight),
+      targetWeight: numberOrNull(d.targetWeight),
+      lastMeasurement: last ? last.date : '',
+      nextAppointment: typeof d.nextAppointment === 'string' ? d.nextAppointment : '',
+      plan: status === 'approved' ? 'approved' as const : status ? 'draft' as const : 'none' as const,
+      pendingDraft: !!d.pendingPlan && typeof d.pendingPlan === 'object',
+      lastSeen: at === undefined ? '' : at === null ? 'never' : localDateKey(at, timeZone),
+      since: dayOfIso(d.createdAt, timeZone),
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  return { ok: true, spec: patientsSheet(rows, today), speech: () => `a lista dos seus ${rows.length} ${rows.length === 1 ? 'paciente' : 'pacientes'}, com peso, meta, próxima consulta e situação do plano` };
+}
+
+async function weightsSpec(db: Firestore, nutritionistId: string, patientName: unknown, today: string): Promise<Built> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), patientName, 'do paciente');
+  if (!picked.ok) return picked;
+  const patient = picked.value;
+  const snap = await db.collection('patients').doc(patient.uid).get();
+  const entries = weightEntriesOf(snap.exists ? snap.data() || {} : {});
+  if (!entries.length) return { ok: false, result: { ok: false, status: 409, speech: `${patient.name} ainda não tem medições de peso registradas.` } };
+  return {
+    ok: true,
+    spec: weightSheet(patient.name, entries, patient.targetWeight, today),
+    speech: (chart) => `a evolução do peso de ${patient.name}, com ${entries.length} ${entries.length === 1 ? 'medição' : 'medições'}${chart ? ' e um gráfico' : ''}`,
+  };
+}
+
+async function planSpec(db: Firestore, nutritionistId: string, patientName: unknown, wantsDraft: boolean, today: string): Promise<Built> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), patientName, 'do paciente');
+  if (!picked.ok) return picked;
+  const patient = picked.value;
+  const snap = await db.collection('patients').doc(patient.uid).get();
+  const data = snap.exists ? snap.data() || {} : {};
+  const current = data.currentPlan && typeof data.currentPlan === 'object' ? data.currentPlan as Record<string, unknown> : null;
+  const approved = current && current.status === 'approved' ? current : null;
+  const draft = draftOf(data);
+  // O aprovado, a não ser que ela peça o rascunho; quem só tem rascunho recebe o rascunho.
+  const useDraft = wantsDraft ? !!draft : !approved && !!draft;
+  const days = (useDraft ? draft?.days : approved ? planDaysOf(approved) : []) || [];
+  if (!days.some((day) => day.meals.some((meal) => meal.items.length))) {
+    return { ok: false, result: { ok: false, status: 409, speech: wantsDraft && !draft
+      ? `${patient.name} não tem rascunho de plano esperando aprovação.`
+      : `${patient.name} ainda não tem plano alimentar com refeições.` } };
+  }
+  const withTaco = days.some((day) => day.meals.some((meal) => Array.isArray(meal.foods) && meal.foods.some(Boolean)));
+  return {
+    ok: true,
+    spec: planSheet(patient.name, days, useDraft, today),
+    speech: () => `${useDraft ? 'o rascunho do plano' : 'o plano alimentar aprovado'} de ${patient.name}${withTaco ? ', com as calorias e os macros pela tabela TACO' : ''}`
+      + (!useDraft && draft ? '. O rascunho novo, que ainda espera a sua aprovação, ficou de fora' : ''),
+  };
+}
+
+async function agendaSpec(token: string, input: SpreadsheetInput, timeZone: string, now: Date): Promise<Built> {
+  const from = typeof input.date === 'string' && input.date.trim() ? input.date.trim() : localDateKey(now, timeZone);
+  const start = parseLocalDateTime(from, '00:00', timeZone);
+  if (!start) return { ok: false, result: { ok: false, status: 422, speech: 'A partir de qual dia? Diga a data completa.' } };
+  const raw = typeof input.days === 'string' && /^\d+$/.test(input.days.trim()) ? Number(input.days.trim()) : input.days;
+  const days = typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= AGENDA_SHEET_MAX_DAYS ? raw : AGENDA_SHEET_DAYS;
+  const end = new Date(start.getTime() + days * ONE_DAY_MS);
+  const query = new URLSearchParams({ timeMin: start.toISOString(), timeMax: end.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '250' });
+  const res = await googleRequest(token, 'GET', `${CALENDAR_EVENTS_URL}?${query}`).catch(() => null);
+  if (!res || !res.ok) return { ok: false, result: { ok: false, status: 502, speech: 'Não consegui ver a sua agenda agora. Nenhuma planilha foi criada. Tente de novo em instantes.' } };
+  const weekday = (date: Date) => new Intl.DateTimeFormat('pt-BR', { timeZone, weekday: 'long' }).format(date);
+  const entries: AgendaEntry[] = (Array.isArray(res.json.items) ? res.json.items : [])
+    .filter((item: Record<string, any>) => item && item.status !== 'cancelled')
+    .map((item: Record<string, any>) => {
+      const allDay = !item.start?.dateTime;
+      const when = new Date(item.start?.dateTime || `${item.start?.date}T12:00:00Z`);
+      const until = item.end?.dateTime ? new Date(item.end.dateTime) : null;
+      return {
+        date: allDay ? String(item.start?.date || '') : localDateKey(when, timeZone),
+        weekday: allDay ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'long' }).format(when) : weekday(when),
+        start: allDay ? 'Dia todo' : timeLabel(when, timeZone),
+        end: !allDay && until ? timeLabel(until, timeZone) : '',
+        title: cleanText(item.summary, 200) || 'Compromisso sem título',
+        where: cleanText(item.location, 300) || (typeof item.hangoutLink === 'string' ? item.hangoutLink : ''),
+      };
+    });
+  const to = localDateKey(new Date(end.getTime() - ONE_DAY_MS), timeZone);
+  if (!entries.length) return { ok: false, result: { ok: true, speech: `Você não tem compromissos de ${dateKeyLabel(from)} a ${dateKeyLabel(to)}, então não criei a planilha.` } };
+  return { ok: true, spec: agendaSheet(entries, from, to), speech: () => `a sua agenda de ${dateKeyLabel(from)} a ${dateKeyLabel(to)}, com ${entries.length} ${entries.length === 1 ? 'compromisso' : 'compromissos'}` };
+}
+
+/**
+ * Cria uma planilha no Google Planilhas dela: lista de pacientes, evolução do peso de um paciente, plano alimentar
+ * (aprovado ou rascunho, com as contas da TACO) ou agenda. O link vai para o e-mail dela (a Ali não lê links em voz alta).
+ */
+export async function createSpreadsheet(db: Firestore, nutritionistId: string, input: SpreadsheetInput, lastSeen: LastSeenLookup, now = new Date()): Promise<ActionResult> {
+  const asked = cleanText(input.sheet, 20).toLowerCase();
+  const kind = Object.prototype.hasOwnProperty.call(SHEET_KINDS, asked) ? SHEET_KINDS[asked] : undefined;
+  if (!kind) return { ok: false, status: 422, speech: 'Qual planilha você quer: a lista de pacientes, a evolução do peso de um paciente, o plano alimentar de um paciente ou a sua agenda?' };
+  const access = await getAccess(db, nutritionistId);
+  if (!access.ok) return accessProblem(access.reason);
+  if (!access.scopes.includes(SHEETS_SCOPE)) return { ok: false, status: 409, speech: NO_SHEETS };
+
+  const tz = (await loadSettings(db, nutritionistId)).timezone;
+  const today = localDateKey(now, tz);
+  const usageRef = db.collection('aliUsage').doc(nutritionistId);
+  const usageSnap = await usageRef.get();
+  const usage = usageSnap.exists ? usageSnap.data() || {} : {};
+  const madeToday = usage.sheetsDay === today && typeof usage.sheets === 'number' ? usage.sheets : 0;
+  if (madeToday >= DAILY_SHEET_LIMIT) return { ok: false, status: 429, speech: `Você chegou ao limite de ${DAILY_SHEET_LIMIT} planilhas por dia pela Ali. Amanhã libera de novo.` };
+
+  const built = kind === 'patients' ? await patientsSpec(db, nutritionistId, lastSeen, tz, today)
+    : kind === 'weights' ? await weightsSpec(db, nutritionistId, input.patientName, today)
+      : kind === 'plan' ? await planSpec(db, nutritionistId, input.patientName, input.draft === true || input.draft === 'true', today)
+        : await agendaSpec(access.token, input, tz, now);
+  if (!built.ok) return built.result;
+
+  const created = await createSheet(access.token, built.spec, tz);
+  if (!created.ok) {
+    // 403 costuma ser a API de planilhas desligada no projeto do Google ou a permissão retirada pela nutricionista.
+    reportServerError(`Ali da nutricionista: o Google não criou a planilha (código ${created.status}).`, new Error(`Google Planilhas respondeu ${created.status}`));
+    return { ok: false, status: 502, speech: created.status === 401 || created.status === 403
+      ? `O Google não deixou criar a planilha agora. ${NO_SHEETS}`
+      : 'Não consegui criar a planilha no seu Google agora. Nada foi criado. Tente de novo em instantes.' };
+  }
+  await usageRef.set({ sheetsDay: today, sheets: madeToday + 1, updatedAt: now.toISOString() }, { merge: true });
+
+  // O link vai para o e-mail dela; se o e-mail falhar, a planilha continua no Drive.
+  let mailed = false;
+  try {
+    await sendMail(access.token, {
+      fromName: 'Ali — NutriAli', fromEmail: access.email, to: access.email,
+      subject: `Planilha pronta: ${built.spec.title}`,
+      html: emailLayout('Sua planilha está pronta', [
+        p(`A Ali criou a planilha <strong>${escapeHtml(built.spec.title)}</strong> no seu Google Planilhas.`),
+        p(`<a href="${escapeHtml(created.url)}" style="color:#276e58">Abrir a planilha</a>`),
+        p('Ela fica só na sua conta do Google, em Meu Drive. Os dados de saúde dos pacientes estão nela: compartilhe com cuidado.'),
+      ].join(''), 'Aviso automático do NutriAli.'),
+    });
+    mailed = true;
+  } catch (error) {
+    reportServerError('Ali da nutricionista: planilha criada, mas o link não foi enviado por e-mail.', error);
+  }
+  return {
+    ok: true,
+    speech: `Pronto! Criei no seu Google Planilhas ${built.speech(created.chart)}. `
+      + (mailed ? 'Mandei o link para o seu e-mail.' : 'Ela está no seu Google Drive, em Meu Drive.'),
+    spreadsheet: { title: built.spec.title, url: created.url, rows: built.spec.rows.length, kind },
+  };
+}
+
 interface Person { name: string; email: string | null }
 
 /** Pacientes dela e contatos salvos na Minha Ali: os únicos destinos que a Ali aceita. */
@@ -957,7 +1154,7 @@ export async function sendEmail(db: Firestore, nutritionistId: string, input: Em
   } catch {
     return { ok: false, status: 502, speech: 'Não consegui enviar o e-mail agora. Nada foi enviado. Tente de novo em instantes.' };
   }
-  await usageRef.set({ day: today, emails: sentToday + 1, updatedAt: now.toISOString() });
+  await usageRef.set({ day: today, emails: sentToday + 1, updatedAt: now.toISOString() }, { merge: true });
   return { ok: true, speech: `E-mail enviado para ${recipient.name}.`, email: { to: recipient.name, subject } };
 }
 
