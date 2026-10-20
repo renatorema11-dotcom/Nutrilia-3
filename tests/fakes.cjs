@@ -74,7 +74,7 @@ function parseMail(raw) {
 
 /** Agenda e Gmail de mentira: guardam o que receberam para o teste conferir. */
 function createGoogle() {
-  const google = { busy: [], events: new Map(), created: 0, deleted: [], sent: [], lastEvent: null, deleteStatus: 204, tokenStatus: 200 };
+  const google = { busy: [], events: new Map(), created: 0, deleted: [], sent: [], lastEvent: null, deleteStatus: 204, tokenStatus: 200, sheets: [], sheetsStatus: 200, chartStatus: 200 };
   google.fetch = async (url, init = {}) => {
     const method = init.method || 'GET';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : null;
@@ -86,6 +86,21 @@ function createGoogle() {
     if (url.includes('/gmail/v1/users/me/messages/send')) {
       google.sent.push(parseMail(Buffer.from(body.raw, 'base64url').toString('utf8')));
       return reply(200, { id: `mensagem-${google.sent.length}` });
+    }
+    // Google Planilhas: guarda cada planilha criada e os pedidos de gráfico.
+    if (url.startsWith('https://sheets.googleapis.com/v4/spreadsheets')) {
+      const batch = url.match(/\/spreadsheets\/([^/:?]+):batchUpdate$/);
+      if (batch) {
+        const sheet = google.sheets.find((s) => s.id === decodeURIComponent(batch[1]));
+        if (!sheet) return reply(404, { error: { code: 404 } });
+        if (google.chartStatus !== 200) return reply(google.chartStatus, { error: {} });
+        sheet.requests.push(...body.requests);
+        return reply(200, { spreadsheetId: sheet.id, replies: [{}] });
+      }
+      if (method !== 'POST' || google.sheetsStatus !== 200) return reply(google.sheetsStatus === 200 ? 405 : google.sheetsStatus, { error: {} });
+      const id = `planilha-${google.sheets.length + 1}`;
+      google.sheets.push({ id, body, query: url.split('?')[1] || '', requests: [] });
+      return reply(200, { spreadsheetId: id, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${id}/edit` });
     }
     const match = url.match(/\/calendars\/primary\/events(?:\/([^?]+))?(?:\?(.*))?$/);
     if (!match) return reply(404, {});

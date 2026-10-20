@@ -50,6 +50,7 @@ async function test(name, options, status, inspect = () => {}) {
     addConsultationNote: fixed('addConsultationNote', { note: { patientName: 'Ana' } }),
     createPlanDraft: fixed('createPlanDraft', { plan: { patientName: 'Ana', status: 'running' } }),
     planDraft: fixed('planDraft', { plan: { patientName: 'Ana', status: 'draft' } }),
+    createSpreadsheet: fixed('createSpreadsheet', { spreadsheet: { title: 'Pacientes — NutriAli', url: 'https://docs.google.com/spreadsheets/d/x/edit', rows: 4, kind: 'patients' } }),
     ...options.assistant,
   };
   const env = { AGENT_API_SECRET: secret, FIREBASE_SERVICE_ACCOUNT_KEY: JSON.stringify({ project_id: cfg.projectId }), ...options.env };
@@ -105,7 +106,7 @@ async function test(name, options, status, inspect = () => {}) {
   await test('Payload em lista', { body: { action: 'list_patients', payload: [] } }, 400);
   await test('Ação fora da lista', { body: { action: 'delete_patient' } }, 400);
   await test('Ação de paciente não vale aqui', { body: { action: 'log_meal', confirmed: true } }, 400);
-  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft']) {
+  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft', 'create_spreadsheet']) {
     await test(`Exige confirmação: ${action}`, { body: { action, payload: {} } }, 422);
     await test(`Confirmação em texto não vale: ${action}`, { body: { action, confirmed: 'true', payload: {} } }, 422);
   }
@@ -194,6 +195,14 @@ async function test(name, options, status, inspect = () => {}) {
     assert.equal(acted.length, 0);
   });
   await test('Calorias de um alimento que a TACO não tem', { body: { action: 'food_info', payload: { food: 'whey' } } }, 404);
+  await test('Planilha confirmada recebe o pedido e quem consulta o último acesso; a auditoria não leva o conteúdo', { body: { action: 'create_spreadsheet', confirmed: true, payload: { sheet: 'weights', patientName: 'Ana' } } }, 200, (events, json, acted) => {
+    assert.deepEqual(acted[0].slice(0, 3), ['createSpreadsheet', 'nutri-A', { sheet: 'weights', patientName: 'Ana' }]);
+    assert.equal(typeof acted[0][3], 'function');
+    assert.equal(json.spreadsheet.kind, 'patients');
+    const audit = events.find((e) => e[0] === 'audit')[2];
+    assert.equal(audit.action, 'create_spreadsheet');
+    assert.ok(!JSON.stringify(audit).includes('Ana') && !JSON.stringify(audit).includes('docs.google'));
+  });
   await test('Ler o rascunho é leitura e recebe só o nome', { body: { action: 'get_plan_draft', payload: { patientName: 'Ana', text: 'x' } } }, 200, (_, __, acted) => {
     assert.deepEqual(acted[0], ['planDraft', 'nutri-A', 'Ana']);
   });
