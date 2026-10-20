@@ -36,7 +36,8 @@ export async function GET(req: Request) {
     if (!user.exists || user.data()?.role !== 'nutritionist') return back('erro');
     const result = await completeConnection(db, cfg, state.uid, code);
     if (!result.ok) return back(result.reason === 'scopes' ? 'permissoes' : 'erro');
-    return back('conectado');
+    // A permissão das planilhas é opcional: sem ela, a Ali usa a agenda e o Gmail e avisa que não cria planilhas.
+    return back(result.sheets ? 'conectado' : 'conectado-sem-planilhas');
   } catch {
     return back('erro');
   }
