@@ -64,8 +64,8 @@ export default function PrivacyPage() {
           <ul className="list-disc space-y-1 pl-5">
             <li><strong>A sua nutricionista:</strong> vê o seu prontuário, os seus registros e as conversas com ela. Cada nutricionista só enxerga os próprios pacientes.</li>
             <li>
-              <strong>Serviços que fazem o aplicativo funcionar</strong>, cada um só com o necessário: Google (Firebase, para o banco de dados e o login; Gmail e Google Agenda
-              da nutricionista, quando ela os conecta, para e-mails e consultas), ElevenLabs (voz da Ali), Groq (inteligência artificial, que recebe só o necessário para
+              <strong>Serviços que fazem o aplicativo funcionar</strong>, cada um só com o necessário: Google (Firebase, para o banco de dados e o login; Gmail, Google Agenda e Google Planilhas
+              da nutricionista, quando ela os conecta, para e-mails, consultas e as planilhas que ela pede), ElevenLabs (voz da Ali), Groq (inteligência artificial, que recebe só o necessário para
               responder, sem o seu nome) e Hostinger (servidor onde o aplicativo funciona).
             </li>
             <li>Alguns desses serviços guardam ou processam dados fora do Brasil, por exemplo nos Estados Unidos. Usamos serviços que adotam medidas de segurança e de proteção de dados.</li>
