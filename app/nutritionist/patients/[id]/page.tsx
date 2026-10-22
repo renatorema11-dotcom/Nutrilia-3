@@ -10,6 +10,7 @@ import { ApiError, postJson } from '@/lib/api-client';
 import { AliFoodLogs } from '@/components/ali-food-logs';
 import { ConsultationNotes } from '@/components/consultation-notes';
 import { PlanDayTotals, PlanMealTotals } from '@/components/plan-nutrition';
+import { ExcelDownloadButton } from '@/components/excel-download';
 
 export default function PatientProfile() {
   const routeParams = useParams();
@@ -185,6 +186,20 @@ export default function PatientProfile() {
 
   const planStatus = patient.currentPlan?.status || (draftPlan ? 'draft' : 'none');
   const currentPlan = patient.currentPlan || draftPlan;
+
+  // Planilhas do Excel (evolução do peso e plano alimentar), montadas aqui mesmo no navegador.
+  const sheetDay = async () => {
+    const specs = await import('@/lib/sheet-specs');
+    return { specs, today: specs.sheetDateKey(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo') };
+  };
+  const buildWeightSheet = async () => {
+    const { specs, today } = await sheetDay();
+    return specs.weightSheet(patient.name, specs.weightEntriesOf(patient as unknown as Record<string, unknown>), patient.targetWeight ?? null, today);
+  };
+  const buildPlanSheet = (plan: Plan | null | undefined, draft: boolean) => async () => {
+    const { specs, today } = await sheetDay();
+    return specs.planSheet(patient.name, specs.sheetPlanDaysOf(plan), draft, today);
+  };
   // Rascunho pedido à Ali: ela monta em segundo plano (cerca de um minuto); a página avisa enquanto isso.
   const job = patient.planDraftJob;
   const jobAge = job ? Date.now() - Date.parse(job.startedAt) : Infinity;
@@ -230,16 +245,21 @@ export default function PatientProfile() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-6">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
               <CardTitle>Histórico de Medidas</CardTitle>
-              <Button
-                variant="outline"
-                onClick={() => setShowAddMeasure(!showAddMeasure)}
-                className="text-xs h-8 px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                Nova Medida
-              </Button>
+              <div className="flex items-center gap-2">
+                {patient.measurements && patient.measurements.length > 0 && (
+                  <ExcelDownloadButton build={buildWeightSheet} label="Excel" className="text-xs h-8 px-2" />
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAddMeasure(!showAddMeasure)}
+                  className="text-xs h-8 px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Nova Medida
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {showAddMeasure && (
@@ -306,8 +326,11 @@ export default function PatientProfile() {
 
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle>Plano Alimentar</CardTitle>
+              {currentPlan?.days?.length ? (
+                <ExcelDownloadButton build={buildPlanSheet(currentPlan, currentPlan.status !== 'approved')} className="text-xs h-8 px-2" />
+              ) : null}
             </CardHeader>
             <CardContent>
               {jobRunning && (
@@ -331,10 +354,13 @@ export default function PatientProfile() {
                         {patient.pendingPlan.instructions ? ` Orientações: ${patient.pendingPlan.instructions}` : ''}
                       </p>
                     </div>
-                    <Button onClick={handleApprovePending} className="bg-amber-600 hover:bg-amber-700 text-white border-0 flex-shrink-0">
-                      <CheckCircle2 className="w-4 h-4 mr-2" />
-                      Aprovar e substituir
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                      <ExcelDownloadButton build={buildPlanSheet(patient.pendingPlan, true)} label="Rascunho em Excel" className="text-xs h-9 px-3 bg-white" />
+                      <Button onClick={handleApprovePending} className="bg-amber-600 hover:bg-amber-700 text-white border-0 flex-shrink-0">
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Aprovar e substituir
+                      </Button>
+                    </div>
                   </div>
                   {patient.pendingPlan.days?.map((day, idx) => (
                     <div key={idx} className="space-y-3">
