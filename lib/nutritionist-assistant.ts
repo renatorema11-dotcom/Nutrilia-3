@@ -13,8 +13,9 @@ import type { LastSeenLookup } from './weekly-report';
 import { MOOD_LABELS, moodToday, waterToday } from './daily-log';
 import { cleanNote, listNotesFor, saveNote } from './consultation-notes';
 import { dayTotals } from './plan-nutrition';
-import { agendaSheet, createSheet, patientsSheet, planSheet, weightSheet } from './spreadsheets';
-import type { AgendaEntry, PatientSheetRow, SheetSpec, WeightEntry } from './spreadsheets';
+import { agendaSheet, patientSheetRowOf, patientsSheet, planSheet, weightEntriesOf, weightSheet } from './sheet-specs';
+import type { AgendaEntry, SheetSpec } from './sheet-specs';
+import { createSheet, xlsxExportUrl } from './spreadsheets';
 import { reportServerError } from './server-alerts';
 
 const NOT_CONNECTED = 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.';
@@ -888,47 +889,15 @@ export interface SpreadsheetInput { sheet?: unknown; patientName?: unknown; draf
 type Built = { ok: true; spec: SheetSpec; speech: (chart: boolean) => string } | { ok: false; result: ActionResult };
 
 /** Dia AAAA-MM-DD de um instante gravado, no fuso dela ('' quando não dá para ler). */
-const dayOfIso = (value: unknown, timeZone: string) => {
-  const at = typeof value === 'string' ? new Date(value) : null;
-  return at && Number.isFinite(at.getTime()) ? localDateKey(at, timeZone) : '';
-};
-
-const numberOrNull = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-
-/** Medições com data e peso válidos (com a gordura e quem registrou), da mais antiga para a mais recente. */
-function weightEntriesOf(data: Record<string, unknown>): WeightEntry[] {
-  return (Array.isArray(data.measurements) ? data.measurements : [])
-    .filter((m: Record<string, unknown>) => m && typeof m.date === 'string' && MEASURE_DATE_RE.test(m.date) && typeof m.weight === 'number')
-    .map((m: Record<string, unknown>) => ({ date: m.date as string, weight: m.weight as number, bodyFat: numberOrNull(m.bodyFat), source: typeof m.source === 'string' ? m.source : '' }))
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-}
-
 async function patientsSpec(db: Firestore, nutritionistId: string, lastSeen: LastSeenLookup, timeZone: string, today: string): Promise<Built> {
   const snap = await db.collection('patients').where('nutritionistId', '==', nutritionistId).get();
   const docs = snap.docs.filter((doc) => typeof doc.data()?.name === 'string' && doc.data().name.trim());
   if (!docs.length) return { ok: false, result: { ok: false, status: 409, speech: 'Você ainda não tem pacientes vinculados no NutriAli para eu colocar na planilha.' } };
   // Último acesso: só para quem tem login; sem a informação, a coluna fica vazia.
   const seen = await lastSeen(docs.map((doc) => doc.id)).catch(() => null);
-  const rows: PatientSheetRow[] = docs.map((doc) => {
-    const d = doc.data() || {};
-    const measures = weightEntriesOf(d);
-    const last = measures.length ? measures[measures.length - 1] : null;
-    const status = d.currentPlan?.status;
+  const rows = docs.map((doc) => {
     const at = seen && seen.has(doc.id) ? seen.get(doc.id) : undefined;
-    return {
-      name: String(d.name).trim(),
-      email: isValidEmail(d.email) ? d.email : null,
-      objective: typeof d.objective === 'string' ? d.objective : '',
-      initialWeight: numberOrNull(d.initialWeight) ?? (measures.length ? measures[0].weight : null),
-      weight: last ? last.weight : numberOrNull(d.weight),
-      targetWeight: numberOrNull(d.targetWeight),
-      lastMeasurement: last ? last.date : '',
-      nextAppointment: typeof d.nextAppointment === 'string' ? d.nextAppointment : '',
-      plan: status === 'approved' ? 'approved' as const : status ? 'draft' as const : 'none' as const,
-      pendingDraft: !!d.pendingPlan && typeof d.pendingPlan === 'object',
-      lastSeen: at === undefined ? '' : at === null ? 'never' : localDateKey(at, timeZone),
-      since: dayOfIso(d.createdAt, timeZone),
-    };
+    return patientSheetRowOf(doc.data() || {}, timeZone, at === undefined ? '' : at === null ? 'never' : localDateKey(at, timeZone));
   }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   return { ok: true, spec: patientsSheet(rows, today), speech: () => `a lista dos seus ${rows.length} ${rows.length === 1 ? 'paciente' : 'pacientes'}, com peso, meta, próxima consulta e situação do plano` };
 }
@@ -1048,7 +1017,7 @@ export async function createSpreadsheet(db: Firestore, nutritionistId: string, i
       subject: `Planilha pronta: ${built.spec.title}`,
       html: emailLayout('Sua planilha está pronta', [
         p(`A Ali criou a planilha <strong>${escapeHtml(built.spec.title)}</strong> no seu Google Planilhas.`),
-        p(`<a href="${escapeHtml(created.url)}" style="color:#276e58">Abrir a planilha</a>`),
+        p(`<a href="${escapeHtml(created.url)}" style="color:#276e58">Abrir no Google Planilhas</a> &nbsp;•&nbsp; <a href="${escapeHtml(xlsxExportUrl(created.id))}" style="color:#276e58">Baixar em Excel</a>`),
         p('Ela fica só na sua conta do Google, em Meu Drive. Os dados de saúde dos pacientes estão nela: compartilhe com cuidado.'),
       ].join(''), 'Aviso automático do NutriAli.'),
     });
@@ -1059,7 +1028,7 @@ export async function createSpreadsheet(db: Firestore, nutritionistId: string, i
   return {
     ok: true,
     speech: `Pronto! Criei no seu Google Planilhas ${built.speech(created.chart)}. `
-      + (mailed ? 'Mandei o link para o seu e-mail.' : 'Ela está no seu Google Drive, em Meu Drive.'),
+      + (mailed ? 'Mandei o link para o seu e-mail, com a opção de baixar em Excel.' : 'Ela está no seu Google Drive, em Meu Drive.'),
     spreadsheet: { title: built.spec.title, url: created.url, rows: built.spec.rows.length, kind },
   };
 }
