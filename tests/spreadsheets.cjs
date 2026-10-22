@@ -8,7 +8,7 @@ const { store, db, FieldValue } = createFirestore();
 const google = createGoogle();
 const reports = [];
 const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'daily-log.ts', 'consultation-notes.ts',
-  'taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'spreadsheets.ts', 'nutritionist-assistant.ts'],
+  'taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'sheet-specs.ts', 'spreadsheets.ts', 'nutritionist-assistant.ts'],
 { FieldValue, fetch: google.fetch, reportServerError: (message) => reports.push(message) });
 context.db = db;
 const run = (code) => vm.runInContext(code, context);
@@ -94,7 +94,7 @@ async function check(name, fn) { await fn(); count++; }
   await check('lista de pacientes: só os dela, em ordem, com peso, meta, último acesso e situação do plano; o link vai para o e-mail dela', async () => {
     const out = await sheet({ sheet: 'pacientes' });
     assert.equal(out.ok, true);
-    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas a lista dos seus 3 pacientes, com peso, meta, próxima consulta e situação do plano. Mandei o link para o seu e-mail.');
+    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas a lista dos seus 3 pacientes, com peso, meta, próxima consulta e situação do plano. Mandei o link para o seu e-mail, com a opção de baixar em Excel.');
     assert.deepEqual(out.spreadsheet, { title: 'Pacientes — NutriAli — 13/10/2026', url: 'https://docs.google.com/spreadsheets/d/planilha-1/edit', rows: 3, kind: 'patients' });
     const created = google.sheets[0];
     assert.equal(created.body.sheets[0].properties.title, 'Pacientes');
@@ -108,12 +108,13 @@ async function check(name, fn) { await fn(); count++; }
     const mail = google.sent.at(-1);
     assert.deepEqual([mail.to, mail.subject], ['carla@exemplo.com', 'Planilha pronta: Pacientes — NutriAli — 13/10/2026']);
     assert.ok(mail.html.includes('https://docs.google.com/spreadsheets/d/planilha-1/edit'));
+    assert.ok(mail.html.includes('https://docs.google.com/spreadsheets/d/planilha-1/export?format=xlsx') && mail.html.includes('Baixar em Excel'));
     assert.deepEqual([store.get(`aliUsage/${NUTRI}`).sheetsDay, store.get(`aliUsage/${NUTRI}`).sheets], ['2026-10-13', 1]);
   });
 
   await check('evolução do peso: medições em ordem, mudanças, quanto falta para a meta, quem registrou e o gráfico', async () => {
     const out = await sheet({ sheet: 'weights', patientName: 'ana' });
-    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas a evolução do peso de Ana Souza, com 3 medições e um gráfico. Mandei o link para o seu e-mail.');
+    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas a evolução do peso de Ana Souza, com 3 medições e um gráfico. Mandei o link para o seu e-mail, com a opção de baixar em Excel.');
     const created = google.sheets.at(-1);
     assert.equal(created.body.properties.title, 'Peso de Ana Souza — NutriAli — 13/10/2026');
     assert.deepEqual(values(created, 1), [46266, 74, null, null, null, 9, 'Paciente']);
@@ -124,7 +125,7 @@ async function check(name, fn) { await fn(); count++; }
     assert.deepEqual(chart.spec.basicChart.series[0].series.sourceRange.sources[0], { sheetId: 0, startRowIndex: 0, endRowIndex: 4, startColumnIndex: 1, endColumnIndex: 2 });
     // Sem o gráfico (o Google recusou), a planilha fica e a fala não promete gráfico.
     google.chartStatus = 500;
-    assert.equal((await sheet({ sheet: 'peso', patientName: 'Ana Souza' })).speech, 'Pronto! Criei no seu Google Planilhas a evolução do peso de Ana Souza, com 3 medições. Mandei o link para o seu e-mail.');
+    assert.equal((await sheet({ sheet: 'peso', patientName: 'Ana Souza' })).speech, 'Pronto! Criei no seu Google Planilhas a evolução do peso de Ana Souza, com 3 medições. Mandei o link para o seu e-mail, com a opção de baixar em Excel.');
     google.chartStatus = 200;
     const none = await sheet({ sheet: 'weights', patientName: 'João' });
     assert.deepEqual([none.status, none.speech], [409, 'João Pereira ainda não tem medições de peso registradas.']);
@@ -135,7 +136,7 @@ async function check(name, fn) { await fn(); count++; }
   await check('plano alimentar: o aprovado, item a item, com a TACO, total da refeição e do dia; o rascunho só quando ela pede', async () => {
     const before = google.sheets.length;
     const out = await sheet({ sheet: 'plan', patientName: 'Ana Souza' });
-    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas o plano alimentar aprovado de Ana Souza, com as calorias e os macros pela tabela TACO. O rascunho novo, que ainda espera a sua aprovação, ficou de fora. Mandei o link para o seu e-mail.');
+    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas o plano alimentar aprovado de Ana Souza, com as calorias e os macros pela tabela TACO. O rascunho novo, que ainda espera a sua aprovação, ficou de fora. Mandei o link para o seu e-mail, com a opção de baixar em Excel.');
     const created = google.sheets.at(-1);
     assert.equal(created.body.properties.title, 'Plano alimentar de Ana Souza — NutriAli — 13/10/2026');
     context.meal = { items: ['Arroz branco', 'Feijão', 'Salada à vontade'], foods: [{ taco: 3, grams: 120 }, { taco: 561, grams: 100 }, null] };
@@ -167,7 +168,7 @@ async function check(name, fn) { await fn(); count++; }
     google.events.set('ev-3', { status: 'cancelled', summary: 'Cancelado', start: { dateTime: '2026-10-15T10:00:00-03:00' } });
     google.events.set('ev-4', { status: 'confirmed', summary: 'Longe demais', start: { dateTime: '2026-11-30T10:00:00-03:00' } });
     const out = await sheet({ sheet: 'agenda' });
-    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas a sua agenda de 13 de outubro a 19 de outubro, com 2 compromissos. Mandei o link para o seu e-mail.');
+    assert.equal(out.speech, 'Pronto! Criei no seu Google Planilhas a sua agenda de 13 de outubro a 19 de outubro, com 2 compromissos. Mandei o link para o seu e-mail, com a opção de baixar em Excel.');
     const created = google.sheets.at(-1);
     assert.equal(created.body.properties.title, 'Agenda de 13/10/2026 a 19/10/2026 — NutriAli');
     assert.deepEqual(values(created, 1), [46309, 'quarta-feira', '14:00', '14:50', 'Consulta nutricional — Ana Souza', 'Rua das Flores, 100']);
