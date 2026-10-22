@@ -6,6 +6,7 @@ import { Search, ChevronRight, UserPlus, Users, Loader2, MessageSquare } from 'l
 import Link from 'next/link';
 import { getPatients, Patient } from '@/lib/patients';
 import { AddPatientModal } from '@/components/add-patient-modal';
+import { ExcelDownloadButton } from '@/components/excel-download';
 
 function PlanBadge({ patient }: { patient: Patient }) {
   if (!patient.currentPlan) return <Badge variant="default">Sem Plano</Badge>;
@@ -39,6 +40,17 @@ export default function PatientsList() {
     setPatients((prev) => [newPatient, ...prev]);
   };
 
+  // Planilha do Excel com todos os pacientes (peso, meta, próxima consulta e plano), montada aqui mesmo no navegador.
+  const buildPatientsSheet = async () => {
+    const { patientSheetRowOf, patientsSheet, sheetDateKey } = await import('@/lib/sheet-specs');
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
+    const rows = patients
+      .map((patient) => patientSheetRowOf(patient as unknown as Record<string, unknown>, timeZone))
+      .filter((row) => row.name)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    return patientsSheet(rows, sheetDateKey(new Date(), timeZone), { withLastSeen: false });
+  };
+
   const filteredPatients = patients.filter(
     (p) =>
       (p.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
@@ -52,13 +64,16 @@ export default function PatientsList() {
           <h1 className="text-2xl font-bold text-gray-900">Pacientes</h1>
           <p className="text-gray-600">Gerencie todos os seus pacientes em tempo real.</p>
         </div>
-        <Button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-2 shadow-sm"
-        >
-          <UserPlus className="w-4 h-4" />
-          + Novo Paciente
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExcelDownloadButton build={buildPatientsSheet} disabled={loading || patients.length === 0} />
+          <Button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-2 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" />
+            + Novo Paciente
+          </Button>
+        </div>
       </div>
 
       <Card>
