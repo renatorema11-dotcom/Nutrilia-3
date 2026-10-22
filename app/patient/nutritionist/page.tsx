@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { authFetch } from '@/lib/api-client';
 import {
   getRegisteredNutritionists,
   linkNutritionistToPatient,
@@ -49,33 +50,12 @@ export default function PatientNutritionistSelectionPage() {
         const list = await getRegisteredNutritionists();
         setNutritionists(list);
 
-        // Fetch patient profile from Firestore
+        // O vínculo que vale é o do prontuário. Sem prontuário, a pessoa escolhe na lista abaixo e ele nasce
+        // nessa escolha: nada de montar um paciente de exemplo com idade, peso e altura inventados.
         if (user?.uid) {
           const patientSnap = await getDoc(doc(db, 'patients', user.uid));
           if (patientSnap.exists()) {
             setPatientData(patientSnap.data() as Patient);
-          } else {
-            const userSnap = await getDoc(doc(db, 'users', user.uid));
-            if (userSnap.exists()) {
-              const uData = userSnap.data();
-              if (uData.patientData) {
-                setPatientData(uData.patientData as Patient);
-              } else if (uData.nutritionistId) {
-                setPatientData({
-                  id: user.uid,
-                  name: uData.displayName || user.displayName || 'Paciente',
-                  email: user.email || '',
-                  age: 30,
-                  weight: 70,
-                  height: 170,
-                  objective: 'Saúde Geral',
-                  createdAt: new Date().toISOString(),
-                  measurements: [],
-                  nutritionistId: uData.nutritionistId,
-                  nutritionistName: uData.nutritionistData?.nutritionistName || uData.nutritionistName
-                } as Patient);
-              }
-            }
           }
         }
       } catch (err) {
@@ -93,42 +73,29 @@ export default function PatientNutritionistSelectionPage() {
     setSelectingId(modalNutritionist.id);
 
     try {
-      await linkNutritionistToPatient(user.uid, modalNutritionist);
-      
       const pName = user.displayName || patientData?.name || 'Paciente';
       const pEmail = user.email || patientData?.email || 'email@paciente.com';
 
-      // Send email notification to nutritionist
+      // O nome e o e-mail entram no prontuário se ele ainda não existir (conta criada pelo Google).
+      await linkNutritionistToPatient(user.uid, modalNutritionist, { name: pName, email: user.email || patientData?.email || '' });
+
+      // A nutricionista é avisada por e-mail se tiver o Google conectado; se o aviso falhar, a escolha continua valendo.
       try {
-        await fetch('/api/notify-nutritionist', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nutritionistId: modalNutritionist.id,
-            nutritionistEmail: modalNutritionist.email,
-            nutritionistName: modalNutritionist.displayName,
-            patientId: user.uid,
-            patientName: pName,
-            patientEmail: pEmail
-          })
-        });
+        await authFetch('/api/notify-nutritionist', { method: 'POST' });
       } catch (notifyErr) {
-        console.warn('Erro ao notificar nutricionista por e-mail:', notifyErr);
+        console.warn('Erro ao avisar a nutricionista:', notifyErr);
       }
 
-      // Update local state
+      // Update local state (sem inventar idade, peso ou altura para quem ainda não informou)
       setPatientData((prev) => ({
         ...(prev || {
           id: user.uid,
           name: pName,
           email: pEmail,
-          age: 30,
-          weight: 70,
-          height: 170,
-          objective: 'Saúde Geral',
+          objective: '',
           createdAt: new Date().toISOString(),
           measurements: []
-        }),
+        } as unknown as Patient),
         nutritionistId: modalNutritionist.id,
         nutritionistName: modalNutritionist.displayName,
         nutritionistEmail: modalNutritionist.email,
@@ -137,12 +104,13 @@ export default function PatientNutritionistSelectionPage() {
         nutritionistSpecialty: modalNutritionist.specialty
       }));
 
-      setSuccessMsg(`Você contratou ${modalNutritionist.displayName}! Enviaremos um e-mail para ${modalNutritionist.email} com a notificação do seu cadastro.`);
+      setSuccessMsg(`Você contratou ${modalNutritionist.displayName}! Seu nome já aparece na lista de pacientes desse profissional.`);
       setIsChanging(false);
       setModalNutritionist(null);
       setTimeout(() => setSuccessMsg(''), 7000);
     } catch (err) {
       console.error('Erro ao vincular nutricionista:', err);
+      alert('Não foi possível concluir a escolha agora. Tente de novo em instantes.');
     } finally {
       setSelectingId(null);
     }
@@ -229,7 +197,8 @@ export default function PatientNutritionistSelectionPage() {
               <ShieldCheck className="w-3.5 h-3.5" /> Nutricionista Vinculado
             </div>
 
-            <CardContent className="p-6 sm:p-8">
+            {/* Espaço extra no topo enquanto a foto fica centralizada, para o selo não cobri-la. */}
+            <CardContent className="p-6 pt-12 sm:p-8 sm:pt-12 md:pt-8">
               <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
                 {/* Profile Avatar */}
                 <div className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-200 border-4 border-white shadow-md shrink-0 flex items-center justify-center">

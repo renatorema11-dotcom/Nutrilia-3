@@ -6,40 +6,82 @@ import { Card, CardContent, Button, Input } from '@/components/ui';
 import { Apple, User, Stethoscope } from 'lucide-react';
 import Link from 'next/link';
 import { LanguageSelector } from '@/components/language-selector';
+import { CRN_REGIONS, parseCrn } from '@/lib/crn';
+import { newConsent } from '@/lib/privacy';
+
+function registerErrorMessage(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error
+    && typeof error.code === 'string' ? error.code : '';
+  switch (code) {
+    case 'auth/email-already-in-use':
+      return 'Já existe uma conta com este e-mail. Entre pelo login; se esqueceu a senha, use "Esqueci minha senha".';
+    case 'auth/weak-password':
+      return 'A senha precisa ter pelo menos 6 caracteres.';
+    case 'auth/invalid-email':
+      return 'Digite um e-mail válido.';
+    case 'auth/too-many-requests':
+      return 'Houve muitas tentativas. Aguarde um pouco antes de tentar novamente.';
+    case 'auth/network-request-failed':
+      return 'Não foi possível conectar. Confira a conexão e tente novamente.';
+    default:
+      return 'Não foi possível criar a conta agora. Confira os dados e tente de novo.';
+  }
+}
 
 export default function Register() {
   const [role, setRole] = useState<UserRole>('patient');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [crn, setCrn] = useState('');
+  const [crnRegion, setCrnRegion] = useState('');
+  const [crnNumber, setCrnNumber] = useState('');
+  const [formError, setFormError] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [phone, setPhone] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
   const { login, loginWithGoogle, registerWithEmail } = useAuth();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+    setFormError('');
+    if (!accepted) {
+      setFormError('Para criar a conta, leia e aceite a Política de Privacidade.');
+      return;
+    }
+    // O aceite do termo fica gravado na conta, com a versão da política e a hora.
+    let extraData: Record<string, unknown> = { privacyConsent: newConsent() };
+    if (role === 'nutritionist') {
+      // O formato do CRN é conferido aqui; se a inscrição existe, quem confere é o responsável, antes de aprovar.
+      const checked = parseCrn(`CRN-${crnRegion} ${crnNumber}`);
+      if (!crnRegion || !checked.ok) {
+        setFormError(!crnRegion ? 'Escolha a região do seu CRN.' : checked.ok ? '' : checked.error);
+        return;
+      }
+      extraData = { ...extraData, crn: checked.crn, specialty: specialty.trim(), phone: phone.trim() };
+    }
     setIsLoading(true);
-    
+
     try {
-      const extraData = role === 'nutritionist' ? { crn, specialty, phone } : {};
       await registerWithEmail(email, password, name, role, extraData);
     } catch (error) {
       console.error('Registration error:', error);
-      alert('Erro ao criar conta. Verifique seus dados.');
+      setFormError(registerErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleSignUp = async () => {
+    setFormError('');
     try {
       setIsLoadingGoogle(true);
       await loginWithGoogle(role);
     } catch (error) {
       console.error('Google Sign-Up Error:', error);
+      setFormError('Não foi possível concluir o cadastro com o Google. Tente de novo.');
     } finally {
       setIsLoadingGoogle(false);
     }
@@ -89,6 +131,19 @@ export default function Register() {
               </button>
             </div>
 
+            {role === 'nutritionist' && (
+              <p className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
+                O cadastro de nutricionista passa por uma análise: conferimos o seu CRN antes de liberar o acesso.
+                Você recebe um e-mail quando for aprovado.
+              </p>
+            )}
+
+            {formError && (
+              <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                {formError}
+              </p>
+            )}
+
             <Button
               type="button"
               variant="outline"
@@ -117,11 +172,12 @@ export default function Register() {
               {isLoadingGoogle ? 'Cadastrando com Google...' : 'Cadastrar com o Google'}
             </Button>
 
-            <div className="relative flex items-center justify-center">
-              <div className="border-t border-slate-200 w-full" />
-              <span className="bg-white px-3 text-xs text-slate-500 uppercase tracking-wider relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs text-slate-500 uppercase tracking-wider whitespace-nowrap">
                 ou com email
               </span>
+              <div className="h-px flex-1 bg-slate-200" />
             </div>
 
             <form className="space-y-4" onSubmit={handleRegister}>
@@ -152,14 +208,33 @@ export default function Register() {
               {role === 'nutritionist' && (
                 <div className="space-y-4 pt-4 border-t border-slate-100">
                   <h3 className="text-sm font-semibold text-slate-800">Informações Profissionais</h3>
-                  <Input
-                    id="crn"
-                    label="CRN"
-                    required
-                    value={crn}
-                    onChange={(e) => setCrn(e.target.value)}
-                    placeholder="Ex: CRN-3 12345"
-                  />
+                  <div className="space-y-1">
+                    <label htmlFor="crn-number" className="block text-sm font-medium text-slate-700">CRN</label>
+                    <div className="flex gap-2">
+                      <select
+                        id="crn-region"
+                        aria-label="Região do CRN"
+                        required
+                        value={crnRegion}
+                        onChange={(e) => setCrnRegion(e.target.value)}
+                        className="w-32 shrink-0 rounded-lg bg-white/80 border border-white/50 px-3 py-2 text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm"
+                      >
+                        <option value="">Região</option>
+                        {CRN_REGIONS.map((region) => (
+                          <option key={region} value={region}>CRN-{region}</option>
+                        ))}
+                      </select>
+                      <Input
+                        id="crn-number"
+                        required
+                        value={crnNumber}
+                        onChange={(e) => setCrnNumber(e.target.value)}
+                        placeholder="Número da inscrição"
+                        maxLength={12}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
                   <Input
                     id="specialty"
                     label="Especialidade Principal"
@@ -179,8 +254,19 @@ export default function Register() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full mt-4">
-                Criar conta
+              <label className="flex items-start gap-3 text-sm text-slate-700">
+                <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-1 h-4 w-4 accent-teal-600" />
+                <span>
+                  Li e aceito a{' '}
+                  <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-700 underline">Política de Privacidade</a>
+                  {role === 'patient'
+                    ? ' e autorizo o uso dos meus dados, inclusive os de saúde, para o meu acompanhamento nutricional.'
+                    : ' e me comprometo a usar os dados dos meus pacientes só para o acompanhamento nutricional, com sigilo profissional.'}
+                </span>
+              </label>
+
+              <Button type="submit" disabled={isLoading} className="w-full mt-4">
+                {isLoading ? 'Criando conta...' : 'Criar conta'}
               </Button>
             </form>
           </CardContent>

@@ -5,57 +5,44 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Button } from '@/components/ui';
 import { Droplet, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useAuth } from './auth-provider';
-import { getUserData, updateUserData } from '@/lib/db';
+import { updateUserData } from '@/lib/db';
+import { db } from '@/lib/firebase';
+import { WATER_GOAL_ML, WATER_MAX_ML, dailyKey, waterToday } from '@/lib/daily-log';
 
 export function WaterTracker() {
   const [water, setWater] = useState(0);
   const [isMounted, setIsMounted] = useState(false);
-  const goal = 2000; // 2L
+  const goal = WATER_GOAL_ML;
   const { user } = useAuth();
 
   useEffect(() => {
     setIsMounted(true);
-    async function loadData() {
-      if (user) {
-        const data = await getUserData(user.uid);
-        if (data?.waterIntake?.date === new Date().toLocaleDateString()) {
-          setWater(data.waterIntake.amount || 0);
-        } else {
-          setWater(0);
-        }
-      } else {
-        const saved = localStorage.getItem('mockWaterIntake');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed.date === new Date().toLocaleDateString()) {
-              setWater(parsed.amount);
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        }
+    if (user) {
+      // Listener necessário: a Ali também anota a água, por outro serviço, durante a conversa.
+      return onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+        setWater(waterToday(snapshot.data()?.waterIntake, new Date(), new Date().toLocaleDateString()));
+      }, () => {});
+    }
+    const saved = localStorage.getItem('mockWaterIntake');
+    if (saved) {
+      try {
+        setWater(waterToday(JSON.parse(saved), new Date(), new Date().toLocaleDateString()));
+      } catch (e) {
+        console.error(e);
       }
     }
-    loadData();
   }, [user]);
 
   const addWater = async (amount: number) => {
-    const newWater = Math.min(water + amount, goal * 3);
+    const newWater = Math.min(water + amount, WATER_MAX_ML);
     setWater(newWater);
+    const record = { amount: newWater, date: dailyKey() };
     if (user) {
-      await updateUserData(user.uid, {
-        waterIntake: {
-          amount: newWater,
-          date: new Date().toLocaleDateString()
-        }
-      });
+      await updateUserData(user.uid, { waterIntake: record });
     } else {
-      localStorage.setItem('mockWaterIntake', JSON.stringify({
-        amount: newWater,
-        date: new Date().toLocaleDateString()
-      }));
+      localStorage.setItem('mockWaterIntake', JSON.stringify(record));
     }
   };
 

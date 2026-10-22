@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/components/auth-provider';
@@ -9,46 +10,31 @@ import { getUserData } from '@/lib/db';
 export default function PatientData() {
   const { user } = useAuth();
   const [patientData, setPatientData] = useState<any>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     async function loadData() {
-      if (user) {
-        const data = await getUserData(user.uid);
-        if (data?.patientData) {
-          setPatientData(data.patientData);
-          return;
-        }
-      }
-
-      const saved = localStorage.getItem('mockPatientData');
-      if (saved) {
-        try {
-          setPatientData(JSON.parse(saved));
-          return;
-        } catch {
-          // fallback
-        }
-      }
-
-      // Default user data when no custom values are saved yet
-      setPatientData({
-        name: user?.displayName || 'Paciente',
-        weight: 70,
-        height: 168,
-        targetWeight: 65,
-        initialWeight: 75,
-        objective: 'Saúde e Bem-Estar',
-        measurements: [
-          { date: new Date().toISOString().split('T')[0], weight: 70, height: 168 }
-        ]
-      });
+      if (!user) return;
+      // Só o que está no prontuário: sem valores de exemplo.
+      const data = await getUserData(user.uid);
+      setPatientData(data?.patientData?.weight ? data.patientData : null);
+      setLoaded(true);
     }
 
     loadData();
   }, [user]);
 
-  if (!patientData) {
+  if (!loaded) {
     return <div className="p-8 text-center text-slate-500">Carregando dados...</div>;
+  }
+
+  if (!patientData) {
+    return (
+      <div className="p-8 text-center space-y-3">
+        <p className="text-slate-600">Seus dados ainda não foram informados.</p>
+        <Link href="/onboarding" className="inline-block text-sm font-semibold text-teal-700 underline">Concluir a triagem</Link>
+      </div>
+    );
   }
 
   const measurements = patientData.measurements && patientData.measurements.length > 0

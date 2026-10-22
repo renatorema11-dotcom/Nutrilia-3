@@ -1,5 +1,8 @@
 rules_version = '2';
 
+// Regras do banco do NutriAli. Tudo o que não está liberado aqui é negado.
+// As rotas do servidor (Ali, Google, lembretes, resumo semanal) usam o Admin SDK e não passam por estas regras;
+// por isso nutritionistSettings, googleConnections, aliAppointments, aliUsage e aliReports ficam fechados ao navegador.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -7,84 +10,149 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Conta de nutricionista liberada: cadastro aprovado pelo responsável do NutriAli. Contas de antes da aprovação
+    // existir não têm o campo "approval" e continuam valendo; "pending" e "rejected" não contam como nutricionista.
+    function approvedNutritionist(uid) {
+      let profile = get(/databases/$(database)/documents/users/$(uid)).data;
+      return profile.role == 'nutritionist' && profile.get('approval', 'approved') == 'approved';
+    }
+
     function isNutritionist() {
       return isSignedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'nutritionist';
+        && approvedNutritionist(request.auth.uid);
+    }
+
+    function patientRecord(patientId) {
+      return get(/databases/$(database)/documents/patients/$(patientId)).data;
     }
 
     // True quando a nutricionista logada é a responsável pelo paciente informado.
     function ownsPatient(patientId) {
-      return isNutritionist()
-        && get(/databases/$(database)/documents/patients/$(patientId)).data.nutritionistId == request.auth.uid;
+      return isNutritionist() && patientRecord(patientId).nutritionistId == request.auth.uid;
+    }
+
+    // Campos que mudam nesta gravação (só em atualizações).
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
     }
 
     // ─────────────────────────────────────────────────────────────
     // users/{uid} — perfil de cada conta.
-    //
-    // LEITURA: só o próprio usuário.
-    // CRIAÇÃO: o próprio usuário (cadastro normal, role patient ou
-    //   nutritionist) OU uma nutricionista provisionando uma conta de
-    //   PACIENTE (fluxo "senha temporária" do painel).
-    // ATUALIZAÇÃO: só o próprio usuário, e SEM PODER MUDAR role ou email —
-    //   isso fecha a escalada de privilégio (paciente se auto-promovendo
-    //   a nutricionista editando o próprio documento).
+    // Leitura: só a própria pessoa. A lista de nutricionistas que o paciente vê vem do servidor (/api/nutritionists).
+    // Criação: a própria pessoa como paciente, ou como nutricionista "em análise" (approval = 'pending');
+    // ou a nutricionista aprovada criando a conta de um PACIENTE.
+    // Atualização: só a própria pessoa, sem mexer em role, email, CRN nem na aprovação: ninguém se promove a
+    // nutricionista nem se aprova sozinho. Quem aprova, recusa e grava o CRN conferido é o servidor.
     // ─────────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
       allow create: if isSignedIn() && request.auth.uid == uid
-        && request.resource.data.role in ['patient', 'nutritionist'];
+        && (request.resource.data.role == 'patient'
+          || (request.resource.data.role == 'nutritionist' && request.resource.data.get('approval', '') == 'pending'))
+        && !request.resource.data.keys().hasAny(['approvalDecidedAt', 'approvalDecidedBy', 'approvalNotifiedAt',
+          'approvalNotifyTriedAt', 'approvalRequestedAt']);
       allow create: if isNutritionist() && request.resource.data.role == 'patient';
       allow update: if isSignedIn() && request.auth.uid == uid
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.email == resource.data.email;
+        && !changedKeys().hasAny(['role', 'email', 'crn', 'approval', 'approvalDecidedAt', 'approvalDecidedBy',
+          'approvalNotifiedAt', 'approvalNotifyTriedAt', 'approvalRequestedAt']);
       allow delete: if false;
     }
 
     // ─────────────────────────────────────────────────────────────
     // patients/{patientId} — prontuário (dado sensível de saúde).
-    //
-    // MULTI-TENANT: a nutricionista só acessa pacientes ONDE
-    //   nutritionistId == o uid DELA. Nenhuma nutricionista vê pacientes
-    //   de outra. O paciente lê apenas o próprio prontuário.
-    // Escritas pelo cliente: só a nutricionista responsável. O Ali
-    //   (Admin SDK) passa por cima das regras por design.
+    // A nutricionista só enxerga e altera pacientes em que nutritionistId é o uid DELA.
+    // O paciente lê o próprio prontuário e só pode: criá-lo vazio de plano ao se cadastrar,
+    // trocar nome e foto, e escolher a nutricionista (que precisa ser uma conta de nutricionista aprovada).
+    // Peso, medições e plano: só a nutricionista responsável ou a Ali (servidor).
     // ─────────────────────────────────────────────────────────────
     match /patients/{patientId} {
       allow read: if isSignedIn() && (request.auth.uid == patientId
         || (isNutritionist() && resource.data.nutritionistId == request.auth.uid));
+
       allow create: if isNutritionist() && request.resource.data.nutritionistId == request.auth.uid;
-      allow update, delete: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
+      allow update: if isNutritionist() && resource.data.nutritionistId == request.auth.uid
+        && request.resource.data.nutritionistId == request.auth.uid;
+      allow delete: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
+
+      allow create: if isSignedIn() && request.auth.uid == patientId
+        && request.resource.data.keys().hasOnly(['id', 'name', 'email', 'age', 'weight', 'height', 'targetWeight',
+          'initialWeight', 'bodyFat', 'objective', 'createdAt', 'measurements', 'currentPlan', 'pastPlans', 'photoURL',
+          'nutritionistId', 'nutritionistName', 'nutritionistEmail', 'nutritionistCRN', 'nutritionistPhoto', 'nutritionistSpecialty'])
+        && request.resource.data.get('currentPlan', null) == null
+        && request.resource.data.get('pastPlans', []).size() == 0
+        && (!('nutritionistId' in request.resource.data) || approvedNutritionist(request.resource.data.nutritionistId));
+
+      allow update: if isSignedIn() && request.auth.uid == patientId
+        && changedKeys().hasOnly(['name', 'photoURL', 'nutritionistId', 'nutritionistName', 'nutritionistEmail',
+          'nutritionistCRN', 'nutritionistPhoto', 'nutritionistSpecialty'])
+        && (!changedKeys().hasAny(['nutritionistId']) || approvedNutritionist(request.resource.data.nutritionistId));
     }
 
-    // Diário alimentar (subcoleção — regras NÃO cascateam, precisa de match próprio).
-    // Paciente lê o próprio diário; a nutricionista RESPONSÁVEL lê o dele.
-    // Escrita só via Ali (Admin SDK).
+    // Refeições anotadas pela Ali (subcoleção: precisa de regra própria).
+    // O paciente lê as dele; a nutricionista responsável lê as do paciente. Gravar: só a Ali (servidor).
     match /patients/{patientId}/foodLogs/{logId} {
       allow read: if isSignedIn() && (request.auth.uid == patientId || ownsPatient(patientId));
       allow write: if false;
     }
 
-    // Pedidos de consulta criados pelo Ali em nome do paciente.
-    // Paciente vê os próprios; a nutricionista responsável lê e atualiza
-    // (aprovar/reagendar). Criar/apagar do cliente: nunca (só Admin SDK).
+    // Pedidos de consulta criados pela Ali. O paciente vê os dele; a nutricionista lê e atualiza os dela.
     match /appointmentRequests/{requestId} {
       allow read: if isSignedIn()
         && (resource.data.patientUid == request.auth.uid
             || resource.data.nutritionistId == request.auth.uid);
-      allow update: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
+      allow update: if isNutritionist() && resource.data.nutritionistId == request.auth.uid
+        && !changedKeys().hasAny(['patientUid', 'nutritionistId']);
       allow create, delete: if false;
     }
 
-    // Trilha de auditoria das ações do Ali.
-    // Só a nutricionista responsável pelo paciente lê; NINGUÉM escreve
-    // do cliente — a integridade do log é o que o torna auditorável.
+    // Registro do que a Ali fez. Só a nutricionista responsável lê; ninguém grava pelo navegador.
     match /aiActions/{actionId} {
       allow read: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
       allow write: if false;
     }
 
-    // Todo o resto: negado por padrão.
+    // ─────────────────────────────────────────────────────────────
+    // chats/{chatId} — conversa direta entre a nutricionista e um paciente DELA.
+    // O chatId é "<id do paciente>_<uid da nutricionista>". Só entra quem é uma das duas pontas,
+    // e só enquanto o prontuário do paciente apontar para essa nutricionista.
+    // ─────────────────────────────────────────────────────────────
+    function inChatAsNutritionist(chatId) {
+      let suffix = '_' + request.auth.uid;
+      return chatId.size() > suffix.size()
+        && chatId[chatId.size() - suffix.size():chatId.size()] == suffix
+        && patientRecord(chatId[0:chatId.size() - suffix.size()]).nutritionistId == request.auth.uid;
+    }
+
+    function inChatAsPatient(chatId) {
+      let prefix = request.auth.uid + '_';
+      return chatId.size() > prefix.size()
+        && chatId[0:prefix.size()] == prefix
+        && patientRecord(request.auth.uid).nutritionistId == chatId[prefix.size():chatId.size()];
+    }
+
+    function inChat(chatId) {
+      return isSignedIn() && (inChatAsNutritionist(chatId) || inChatAsPatient(chatId));
+    }
+
+    match /chats/{chatId} {
+      allow read: if inChat(chatId);
+      allow create, update: if inChat(chatId) && request.resource.data.keys().hasOnly(['updatedAt']);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if inChat(chatId);
+        allow create: if inChat(chatId)
+          && request.resource.data.keys().hasOnly(['senderId', 'senderName', 'senderRole', 'text', 'createdAt'])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000;
+        allow update, delete: if false;
+      }
+    }
+
+    // Todo o resto: negado.
     match /{document=**} {
       allow read, write: if false;
     }

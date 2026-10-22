@@ -1,32 +1,35 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateGeminiContent } from "@/lib/gemini";
+import { NextResponse } from "next/server";
+import { aiErrorResponse, generateAi } from "@/lib/ai";
+import { chatHistory, clip, guardAi, lastMessage } from "@/lib/ai-guard";
 
-export async function POST(req: NextRequest) {
-  const fallbackMessage = "No momento meu sistema está com alto número de acessos, mas estou aqui para apoiar sua alimentação saudável! Lembre-se de manter sua hidratação em dia e seguir os horários do seu plano nutricional. Tente me perguntar novamente em alguns instantes.";
+export const runtime = 'nodejs';
+
+// O endereço da rota mantém o nome antigo; a IA que responde é a configurada em lib/ai.ts.
+export async function POST(req: Request) {
+  // Só o paciente logado conversa, com limite de pedidos e de tamanho.
+  const guard = await guardAi(req, { roles: ['patient'], scope: 'chat-patient', limit: 30, maxChars: 60_000 });
+  if (!guard.ok) return guard.response;
 
   try {
-    const { messages, context } = await req.json();
+    const context = clip(guard.body.context, 6000);
 
-    const systemInstruction = `Você é um assistente virtual de nutrição. 
+    const systemInstruction = `Você é um assistente virtual de nutrição.
 O paciente que está falando com você tem o seguinte contexto:
 ${context}
 
 Seja amigável, conciso e motivador. Responda apenas dúvidas sobre a dieta e nutrição em geral.
-Nunca prescreva dietas novas, apenas explique o plano atual ou dê dicas gerais saudáveis.`;
+Nunca prescreva dietas novas, apenas explique o plano atual ou dê dicas gerais saudáveis.
+Responda em português do Brasil.`;
 
-    const lastMessage = messages?.[messages.length - 1]?.text || "Olá, preciso de ajuda com minha alimentação";
+    const message = lastMessage(guard.body.messages, 2000) || "Olá, preciso de ajuda com minha alimentação";
 
-    const result = await generateGeminiContent({
-      model: "gemini-2.5-flash",
-      contents: lastMessage,
-      config: { systemInstruction },
-      fallbackText: fallbackMessage,
-    });
+    // As últimas falas vão junto, para a IA lembrar do que já foi conversado.
+    const history = chatHistory(guard.body.messages, 8, 600);
 
-    return NextResponse.json({ text: result.text });
+    const text = await generateAi({ system: systemInstruction, history, prompt: message, maxTokens: 1000 });
+
+    return NextResponse.json({ text });
   } catch (error) {
-    console.error("Gemini Error:", error);
-    return NextResponse.json({ text: fallbackMessage });
+    return aiErrorResponse(error, 'chat do paciente');
   }
 }
-
