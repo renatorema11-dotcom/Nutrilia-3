@@ -6,6 +6,7 @@ import { Send, Sparkles, UserRound } from 'lucide-react';
 import { getPatients, Patient } from '@/lib/patients';
 import { useAuth } from '@/components/auth-provider';
 import { ApiError, postJson } from '@/lib/api-client';
+import { firstName } from '@/lib/names';
 
 interface Message {
   role: 'user' | 'ai';
@@ -16,7 +17,7 @@ interface Message {
 
 export default function NutritionistAssistant() {
   const { user } = useAuth();
-  const userName = user?.displayName ? user.displayName.split(' ')[0] : 'Nutricionista';
+  const userName = firstName(user?.displayName || '') || 'Nutricionista';
 
   const [messages, setMessages] = useState<Message[]>([
     { role: 'ai', text: `Olá, ${userName}! Sou seu assistente clínico com IA. Posso resumir casos, buscar dados dos seus pacientes cadastrados e ajudar a revisar protocolos.` }
