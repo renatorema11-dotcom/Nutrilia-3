@@ -177,10 +177,10 @@ function AgentInner({
       <div className="text-left lg:text-center space-y-1 lg:space-y-2">
         <h3 className="font-semibold text-teal-900 flex items-center lg:justify-center gap-2">
           <Bot className="w-5 h-5 text-teal-600" />
-          Ali — Assistente de Voz
+          <span translate="no">Ali</span> — Assistente de Voz
         </h3>
         <p className="text-sm text-slate-600">
-          Converse com o Ali: registre seu peso, anote refeições e peça consultas
+          Converse com a Ali: registre seu peso, anote refeições e peça consultas
         </p>
       </div>
 

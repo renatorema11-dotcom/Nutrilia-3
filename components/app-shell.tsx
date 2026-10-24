@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { Apple, LogOut, Menu, X, Loader2, type LucideIcon } from 'lucide-react';
 import type { User } from '@/lib/firebase';
 import { LanguageSelector } from '@/components/language-selector';
+import { nameInitial } from '@/lib/names';
 
 export interface NavItem {
   name: string;
@@ -90,7 +91,7 @@ export function AppShell({ navigation, isActive, user, fallbackName, onLogout, c
               <Image src={user.photoURL} alt={user.displayName || 'Usuário'} width={40} height={40} className="w-full h-full object-cover" referrerPolicy="no-referrer" unoptimized />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-teal-100 text-teal-700 font-bold">
-                {user.displayName?.charAt(0).toUpperCase() || 'U'}
+                {nameInitial(user.displayName || '') || 'U'}
               </div>
             )}
           </div>
@@ -117,7 +118,7 @@ export function AppShell({ navigation, isActive, user, fallbackName, onLogout, c
       <div className={`${size === 'md' ? 'w-10 h-10' : 'w-9 h-9'} bg-[#4c8466] rounded-xl flex items-center justify-center text-white shadow-lg shrink-0`}>
         <Apple className={size === 'md' ? 'h-6 w-6' : 'h-5 w-5'} />
       </div>
-      <span className={`font-bold text-[#276e58] tracking-tight ${size === 'md' ? 'text-xl' : 'text-lg'}`}>NutriAli</span>
+      <span translate="no" className={`font-bold text-[#276e58] tracking-tight ${size === 'md' ? 'text-xl' : 'text-lg'}`}>NutriAli</span>
     </>
   );
 

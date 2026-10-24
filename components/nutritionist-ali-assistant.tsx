@@ -164,7 +164,7 @@ function AssistantPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2 min-w-0">
           <Bot className="w-5 h-5 shrink-0" />
           <div className="min-w-0">
-            <p className="font-semibold leading-tight">Ali, sua assistente</p>
+            <p className="font-semibold leading-tight"><span translate="no">Ali</span>, sua assistente</p>
             <p className="text-xs text-teal-50 truncate">{statusText}</p>
           </div>
         </div>
@@ -235,7 +235,8 @@ export function NutritionistAliAssistant({ hideOnMobile }: { hideOnMobile: boole
         <button type="button" onClick={() => setOpen(true)} aria-label="Abrir a Ali, sua assistente"
           className="fixed z-40 right-4 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:right-6 lg:bottom-6 flex items-center gap-2 h-14 pl-4 pr-5 rounded-full bg-teal-600 text-white font-semibold shadow-lg shadow-teal-600/30 hover:bg-teal-700">
           <Bot className="w-6 h-6" />
-          <span>Ali</span>
+          {/* translate="no": o tradutor automático trocava o nome pela palavra "There". */}
+          <span translate="no">Ali</span>
         </button>
       )}
     </div>

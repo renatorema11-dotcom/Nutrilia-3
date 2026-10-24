@@ -6,6 +6,12 @@ import { db } from '@/lib/firebase';
 
 type FoodLog = { id: string; description: string; mealTime: string; loggedAt: string };
 
+/** "23/10/2026, 13:00": sem os segundos, que só poluíam a lista. */
+function formatLoggedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 export function AliFoodLogs({ patientUid }: { patientUid: string }) {
   return patientUid ? <FoodLogsForPatient key={patientUid} patientUid={patientUid} /> : null;
 }
@@ -27,7 +33,7 @@ function FoodLogsForPatient({ patientUid }: { patientUid: string }) {
         : logs.length === 0 ? <p className="text-sm text-slate-600">Nenhuma refeição registrada com a Ali.</p>
         : <ul className="space-y-3">{logs.map(log => <li key={log.id} className="rounded-lg bg-white p-3 text-sm">
           <p className="whitespace-pre-wrap text-slate-800">{log.description}</p>
-          <p className="mt-1 text-xs text-slate-500">{log.mealTime} · {new Date(log.loggedAt).toLocaleString('pt-BR')}</p>
+          <p className="mt-1 text-xs text-slate-500">{[log.mealTime, formatLoggedAt(log.loggedAt)].filter(Boolean).join(' · ')}</p>
         </li>)}</ul>}
     </section>
   );

@@ -80,7 +80,9 @@ export function PrivacyCard({ role }: { role: 'patient' | 'nutritionist' }) {
       <CardContent className="space-y-4 text-sm text-slate-700">
         <p>
           Veja como o NutriAli cuida dos seus dados na{' '}
-          <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-700 underline">Política de Privacidade</a>.
+          <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-700 underline">Política de Privacidade</a>
+          {' '}e as regras de uso nos{' '}
+          <a href="/termos" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-700 underline">Termos de Uso</a>.
           Dúvidas e pedidos: {PRIVACY_CONTACT}.
         </p>
 

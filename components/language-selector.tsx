@@ -231,6 +231,10 @@ export function LanguageSelector({ className = '', compact = false }: { classNam
             </div>
             <Sparkles className="w-3.5 h-3.5 text-teal-500/60" />
           </div>
+          {/* A tradução é do Google Tradutor: o texto da tela (que pode ter dados de saúde) vai para o Google. */}
+          <p className="px-3 -mt-1 mb-2 text-[10px] leading-snug text-slate-500">
+            Fora do português, a tradução é automática, feita pelo Google Tradutor: o texto da tela é enviado ao Google.
+          </p>
 
           {/* Quick Filter Search */}
           <div className="relative px-1 mb-2">
