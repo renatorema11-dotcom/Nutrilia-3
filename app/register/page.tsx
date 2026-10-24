@@ -257,7 +257,9 @@ export default function Register() {
               <label className="flex items-start gap-3 text-sm text-slate-700">
                 <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-1 h-4 w-4 accent-teal-600" />
                 <span>
-                  Li e aceito a{' '}
+                  Li e aceito os{' '}
+                  <a href="/termos" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-700 underline">Termos de Uso</a>
+                  {' '}e a{' '}
                   <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-700 underline">Política de Privacidade</a>
                   {role === 'patient'
                     ? ' e autorizo o uso dos meus dados, inclusive os de saúde, para o meu acompanhamento nutricional.'
