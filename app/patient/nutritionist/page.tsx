@@ -5,6 +5,7 @@ import { useAuth } from '@/components/auth-provider';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { authFetch } from '@/lib/api-client';
+import { firstName, nameInitial } from '@/lib/names';
 import {
   getRegisteredNutritionists,
   linkNutritionistToPatient,
@@ -213,7 +214,7 @@ export default function PatientNutritionistSelectionPage() {
                     />
                   ) : (
                     <div className="w-full h-full bg-teal-700 text-white font-bold text-3xl flex items-center justify-center">
-                      {currentNutritionist.displayName.charAt(0).toUpperCase()}
+                      {nameInitial(currentNutritionist.displayName)}
                     </div>
                   )}
                 </div>
@@ -259,7 +260,7 @@ export default function PatientNutritionistSelectionPage() {
                     <Link href="/patient/chat?tab=nutritionist">
                       <Button className="bg-teal-700 hover:bg-teal-800 text-white font-medium text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-sm">
                         <MessageSquare className="w-4 h-4" />
-                        Conversar no Chat com {currentNutritionist.displayName.split(' ')[0]}
+                        Conversar no Chat com {firstName(currentNutritionist.displayName)}
                       </Button>
                     </Link>
 
@@ -372,7 +373,7 @@ export default function PatientNutritionistSelectionPage() {
                             />
                           ) : (
                             <div className="w-full h-full bg-teal-700 text-white font-bold text-xl flex items-center justify-center">
-                              {nutri.displayName.charAt(0).toUpperCase()}
+                              {nameInitial(nutri.displayName)}
                             </div>
                           )}
                         </div>
