@@ -12,7 +12,7 @@ export default function Home() {
           <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#4c8466] rounded-xl flex items-center justify-center text-white shadow-lg shrink-0">
             <Apple className="h-6 w-6 sm:h-7 sm:w-7" />
           </div>
-          <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#276e58]">NutriAli</span>
+          <span translate="no" className="text-xl sm:text-2xl font-bold tracking-tight text-[#276e58]">NutriAli</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <LanguageSelector compact />
@@ -44,7 +44,7 @@ export default function Home() {
         </h1>
 
         <p className="text-lg sm:text-xl text-slate-600 mb-10 max-w-2xl leading-relaxed">
-          O NutriAli dá ao seu paciente um assistente de voz, o Ali, disponível 24h para tirar
+          O NutriAli dá ao seu paciente uma assistente de voz, a Ali, disponível 24h para tirar
           dúvidas da dieta — e a você, um painel com planos gerados por IA e a evolução de cada
           paciente em gráficos claros.
         </p>
@@ -67,9 +67,9 @@ export default function Home() {
             <div className="w-12 h-12 bg-teal-100 text-teal-700 rounded-xl flex items-center justify-center">
               <Mic className="w-6 h-6" />
             </div>
-            <h3 className="font-bold text-lg">Ali, o assistente de voz</h3>
+            <h3 className="font-bold text-lg">Ali, a assistente de voz</h3>
             <p className="text-slate-600 text-sm leading-relaxed">
-              Seu paciente conversa com o Ali no app: tira dúvidas sobre o plano, consulta
+              Seu paciente conversa com a Ali no app: tira dúvidas sobre o plano, consulta
               informações do acompanhamento e recebe orientação no horário da refeição.
             </p>
           </div>
@@ -111,9 +111,9 @@ export default function Home() {
             </div>
             <div className="glass-card p-6 flex flex-col gap-3">
               <div className="w-8 h-8 rounded-full bg-[#4c8466] text-white font-bold flex items-center justify-center text-sm">2</div>
-              <h3 className="font-bold flex items-center gap-2"><Mic className="w-4 h-4 text-teal-700" /> Eles conversam com o Ali</h3>
+              <h3 className="font-bold flex items-center gap-2"><Mic className="w-4 h-4 text-teal-700" /> Eles conversam com a Ali</h3>
               <p className="text-slate-600 text-sm leading-relaxed">
-                No app do paciente, o Ali responde dúvidas sobre o plano e o acompanhamento,
+                No app do paciente, a Ali responde dúvidas sobre o plano e o acompanhamento,
                 sempre com base nos dados que você cadastrou.
               </p>
             </div>
@@ -183,7 +183,7 @@ export default function Home() {
               },
               {
                 q: 'E se eu quiser cancelar?',
-                a: 'É só avisar um mês antes. Sem multa, sem fidelidade. Seus dados podem ser exportados a qualquer momento.',
+                a: 'Você pode cancelar quando quiser, sem multa e sem fidelidade. Seus dados podem ser exportados a qualquer momento.',
               },
             ].map((item) => (
               <details key={item.q} className="glass-card p-5 rounded-xl border border-white/60 group">
@@ -219,12 +219,14 @@ export default function Home() {
             <div className="w-8 h-8 bg-[#4c8466] rounded-lg flex items-center justify-center text-white">
               <Apple className="w-4 h-4" />
             </div>
-            <span className="font-bold text-[#276e58]">NutriAli</span>
+            <span translate="no" className="font-bold text-[#276e58]">NutriAli</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
             <a href="#como-funciona" className="hover:text-slate-700">Como funciona</a>
             <a href="#preco" className="hover:text-slate-700">Preço</a>
             <a href="#faq" className="hover:text-slate-700">Dúvidas</a>
+            <Link href="/privacidade" className="hover:text-slate-700">Privacidade</Link>
+            <Link href="/termos" className="hover:text-slate-700">Termos de uso</Link>
             <span className="flex items-center gap-1"><ShieldCheck className="w-4 h-4" /> Dados protegidos</span>
           </div>
           <p className="text-xs text-slate-400">© 2026 NutriAli. Todos os direitos reservados.</p>
