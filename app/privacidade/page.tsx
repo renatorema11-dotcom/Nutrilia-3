@@ -39,6 +39,7 @@ export default function PrivacyPage() {
             <li><strong>Cadastro:</strong> nome, e-mail, foto (se você enviar) e, no caso de nutricionistas, telefone e CRN.</li>
             <li><strong>Dados de saúde (dados sensíveis):</strong> idade, peso, altura, medidas, objetivo, plano alimentar, refeições e fotos de refeições que você registra, água, humor, consultas e as conversas com a sua nutricionista e com a Ali.</li>
             <li><strong>Uso do aplicativo:</strong> data do último acesso e o registro das ações da Ali, sem o conteúdo das mensagens.</li>
+            <li><strong>Pagamentos:</strong> a situação das cobranças do Premium e das consultas (em aberto, paga, estornada), os valores e o código do cliente no Asaas. O CPF de quem paga e os dados do cartão vão direto para o Asaas e não ficam guardados no NutriAli.</li>
           </ul>
         </Section>
 
@@ -47,6 +48,7 @@ export default function PrivacyPage() {
             <li>Permitir que a nutricionista que você escolheu acompanhe o seu tratamento e monte e ajuste o seu plano alimentar.</li>
             <li>Fazer funcionar a Ali, a assistente por voz e por texto, e as análises por inteligência artificial, como a estimativa de calorias de uma foto de refeição.</li>
             <li>Enviar lembretes de consulta e avisos de mensagem nova, de plano novo e de resposta a pedido de consulta.</li>
+            <li>Cobrar o NutriAli Premium e as consultas pagas pelo aplicativo e repassar à nutricionista a parte dela.</li>
             <li>Manter o aplicativo seguro e funcionando.</li>
           </ul>
           <p>Não vendemos os seus dados e não os usamos para publicidade.</p>
@@ -55,8 +57,8 @@ export default function PrivacyPage() {
         <Section title="4. Base legal">
           <p>
             Os dados de saúde são tratados com o seu consentimento específico e destacado, dado ao aceitar este termo (art. 11, I, da Lei Geral de Proteção de Dados),
-            e para a tutela da saúde em procedimento realizado por profissional de saúde (art. 11, II, &quot;f&quot;). Os demais dados são tratados para prestar o serviço
-            que você usa e para cumprir obrigações legais.
+            e para a tutela da saúde em procedimento realizado por profissional de saúde (art. 11, II, &quot;f&quot;). Os demais dados, inclusive os de pagamento, são tratados
+            para prestar o serviço que você contratou (art. 7º, V) e para cumprir obrigações legais.
           </p>
         </Section>
 
@@ -68,6 +70,11 @@ export default function PrivacyPage() {
               da nutricionista, quando ela os conecta, para e-mails, consultas e as planilhas que ela pede), ElevenLabs (voz da Ali), Groq (inteligência artificial, que recebe só o necessário para
               responder, sem o seu nome) e Hostinger (servidor onde o aplicativo funciona).
             </li>
+            <li>
+              <strong>Asaas</strong>, instituição de pagamento: recebe o nome, o e-mail e o CPF de quem paga para cobrar o Premium e as consultas; e, quando a nutricionista
+              ativa os recebimentos, os dados da conta dela (CPF ou CNPJ, data de nascimento, telefone, endereço e renda), que também vão direto para o Asaas.
+            </li>
+            <li><strong>Google Tradutor</strong>, só quando você escolhe outro idioma no aplicativo: o texto da tela é enviado ao Google para ser traduzido.</li>
             <li>Alguns desses serviços guardam ou processam dados fora do Brasil, por exemplo nos Estados Unidos. Usamos serviços que adotam medidas de segurança e de proteção de dados.</li>
           </ul>
         </Section>
