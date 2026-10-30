@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { AiError, aiErrorResponse, generateAiJson, normalizeFoodFeedback } from "@/lib/ai";
 import { clip, guardAi, parseImage } from "@/lib/ai-guard";
+import { getAdminDb } from "@/lib/firebase-admin";
+import { PREMIUM_REQUIRED_MESSAGE } from "@/lib/premium";
+import { hasPremium } from "@/lib/premium-access";
 
 export const runtime = 'nodejs';
 
@@ -22,6 +25,10 @@ export async function POST(req: Request) {
     if (guard.body.image && !image) return NextResponse.json({ error: 'Envie a foto em JPG, PNG ou WebP.' }, { status: 422 });
     if (image && image.data.length > MAX_IMAGE_BASE64) {
       return NextResponse.json({ error: 'A foto ficou grande demais. Tire outra ou escolha uma menor.' }, { status: 413 });
+    }
+    // A análise pelo texto é de todos; a da foto é do Premium.
+    if (image && !(await hasPremium(getAdminDb(), guard.caller.uid))) {
+      return NextResponse.json({ error: PREMIUM_REQUIRED_MESSAGE, premium: true }, { status: 402 });
     }
 
     const buildPrompt = (withImage: boolean) => `Você é um nutricionista analítico e amigável.
