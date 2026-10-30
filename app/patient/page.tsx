@@ -19,6 +19,7 @@ import { WeightProgress } from '@/components/weight-progress';
 import { FoodDiary } from '@/components/food-diary';
 import { Achievements } from '@/components/achievements';
 import { EmailNoticesToggle, NutriMessagesBanner } from '@/components/nutri-notices';
+import { PremiumButton, PremiumLock, usePremium } from '@/components/premium';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
 import { ApiError, postJson } from '@/lib/api-client';
@@ -34,6 +35,7 @@ export default function PatientDashboard() {
   const printRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user } = useAuth();
+  const premium = usePremium();
 
   const handlePrint = () => {
     handlePrintOrDownload(printRef.current, 'Plano Alimentar', creativePlan);
@@ -204,10 +206,14 @@ export default function PatientDashboard() {
                     {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                     Salvar Plano
                   </Button>
-                  <Button onClick={() => handlePrint()} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
-                    <Download className="w-4 h-4 mr-2" />
-                    Exportar PDF
-                  </Button>
+                  {premium.active ? (
+                    <Button onClick={() => handlePrint()} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
+                      <Download className="w-4 h-4 mr-2" />
+                      Exportar PDF
+                    </Button>
+                  ) : (
+                    <PremiumButton label="Exportar PDF" className="flex-1 text-xs h-9" />
+                  )}
                   <Button onClick={() => { if (window.confirm('Você tem certeza?')) setCreativePlan(''); }} variant="outline" className="flex-1 text-xs h-9">
                     Gerar nova opção
                   </Button>
@@ -225,13 +231,22 @@ export default function PatientDashboard() {
       
       {hasPlan ? (
         <div className="flex flex-col gap-6 mt-6">
-          <div className="w-full">
-            <Achievements />
-          </div>
-          
-          <div className="tour-evolution w-full">
-            <EvolutionChart />
-          </div>
+          {/* Gráficos e conquistas são do Premium; enquanto o Premium carrega, nada aparece no lugar. */}
+          {premium.active ? (
+            <>
+              <div className="w-full">
+                <Achievements />
+              </div>
+
+              <div className="tour-evolution w-full">
+                <EvolutionChart />
+              </div>
+            </>
+          ) : !premium.loading && (
+            <div className="tour-evolution w-full">
+              <PremiumLock feature="charts" />
+            </div>
+          )}
 
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">

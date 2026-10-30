@@ -3,7 +3,7 @@
 import { useAuth } from '@/components/auth-provider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { LayoutDashboard, FileText, Activity, MessageSquare, User, Stethoscope } from 'lucide-react';
+import { LayoutDashboard, FileText, Activity, MessageSquare, User, Stethoscope, Crown } from 'lucide-react';
 import { AppShell, AppLoading, type NavItem } from '@/components/app-shell';
 import { postJson } from '@/lib/api-client';
 import { ConsentGate } from '@/components/consent-gate';
@@ -14,6 +14,7 @@ const navigation: NavItem[] = [
   { name: 'Meus Dados', shortName: 'Dados', href: '/patient/data', icon: Activity, inBottomBar: true },
   { name: 'Meu Nutricionista', shortName: 'Nutri', href: '/patient/nutritionist', icon: Stethoscope, inBottomBar: true },
   { name: 'Chat', shortName: 'Chat', href: '/patient/chat', icon: MessageSquare, inBottomBar: true },
+  { name: 'Premium', shortName: 'Premium', href: '/patient/premium', icon: Crown },
   { name: 'Meu Perfil', shortName: 'Perfil', href: '/patient/profile', icon: User },
 ];
 
