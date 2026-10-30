@@ -1,8 +1,9 @@
 rules_version = '2';
 
 // Regras do banco do NutriAli. Tudo o que não está liberado aqui é negado.
-// As rotas do servidor (Ali, Google, lembretes, resumo semanal) usam o Admin SDK e não passam por estas regras;
-// por isso nutritionistSettings, googleConnections, aliAppointments, aliUsage e aliReports ficam fechados ao navegador.
+// As rotas do servidor (Ali, Google, lembretes, resumo semanal, pagamentos) usam o Admin SDK e não passam por estas regras;
+// por isso nutritionistSettings, googleConnections, aliAppointments, aliUsage, aliReports, billing, asaasEvents,
+// nutritionistPayments e consultationPayments ficam fechados ao navegador.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -70,9 +71,12 @@ service cloud.firestore {
       allow read: if isSignedIn() && (request.auth.uid == patientId
         || (isNutritionist() && resource.data.nutritionistId == request.auth.uid));
 
-      allow create: if isNutritionist() && request.resource.data.nutritionistId == request.auth.uid;
+      // "premium" (assinatura e cortesia do paciente) só o servidor grava: nem a nutricionista nem o paciente mexem.
+      allow create: if isNutritionist() && request.resource.data.nutritionistId == request.auth.uid
+        && !request.resource.data.keys().hasAny(['premium']);
       allow update: if isNutritionist() && resource.data.nutritionistId == request.auth.uid
-        && request.resource.data.nutritionistId == request.auth.uid;
+        && request.resource.data.nutritionistId == request.auth.uid
+        && !changedKeys().hasAny(['premium']);
       allow delete: if isNutritionist() && resource.data.nutritionistId == request.auth.uid;
 
       allow create: if isSignedIn() && request.auth.uid == patientId
