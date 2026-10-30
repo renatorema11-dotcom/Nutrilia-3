@@ -21,7 +21,7 @@ export default function Home() {
           </Link>
           {/* No celular o convite para testar fica no botão grande logo abaixo. */}
           <Link href="/register" className="hidden sm:block">
-            <Button className="font-bold shadow-teal-600/30">Testar Grátis</Button>
+            <Button className="font-bold shadow-teal-600/30">Começar grátis</Button>
           </Link>
         </div>
       </header>
@@ -52,7 +52,7 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <Link href="/register">
             <Button className="h-14 px-8 text-lg rounded-xl flex items-center gap-2 shadow-lg shadow-teal-600/20">
-              Começar teste grátis
+              Começar grátis
               <ArrowRight className="w-5 h-5" />
             </Button>
           </Link>
@@ -130,18 +130,18 @@ export default function Home() {
 
         {/* Pricing */}
         <div id="preco" className="w-full max-w-3xl mt-24 scroll-mt-20">
-          <h2 className="text-3xl font-extrabold tracking-tight mb-4">Preço simples</h2>
-          <p className="text-slate-600 mb-10">Sem contrato, sem taxa de instalação. Cancele quando quiser.</p>
+          <h2 className="text-3xl font-extrabold tracking-tight mb-4">Você só paga quando recebe</h2>
+          <p className="text-slate-600 mb-10">Sem mensalidade, sem contrato e sem taxa de instalação. O NutriAli ganha junto com você.</p>
           <div className="glass-card p-8 md:p-10 text-left rounded-2xl border border-white/60">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
               <div>
-                <p className="text-sm font-semibold text-teal-700 uppercase tracking-wide">Plano Profissional</p>
-                <p className="mt-2"><span className="text-5xl font-extrabold">R$ 79</span><span className="text-slate-500 font-medium">/mês por nutricionista</span></p>
-                <p className="text-sm text-slate-500 mt-1">30 dias grátis para testar. Preço de lançamento.</p>
+                <p className="text-sm font-semibold text-teal-700 uppercase tracking-wide">Para nutricionistas</p>
+                <p className="mt-2"><span className="text-5xl font-extrabold">10%</span><span className="text-slate-500 font-medium"> do que você receber pelo app</span></p>
+                <p className="text-sm text-slate-500 mt-1">O paciente paga a consulta pelo app e 90% caem direto na sua conta. Sem consultas pagas, você não paga nada.</p>
               </div>
               <Link href="/register">
                 <Button className="h-12 px-6 text-base rounded-xl font-bold shadow-lg shadow-teal-600/20">
-                  Começar teste grátis
+                  Começar grátis
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </Link>
@@ -149,6 +149,7 @@ export default function Home() {
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 'Pacientes ilimitados no seu consultório',
+                'Consultas pagas pelo app, com repasse automático',
                 'Assistente de voz Ali no app do paciente',
                 'Geração de planos alimentares com IA',
                 'Gráficos de evolução peso, medidas e gordura',
@@ -162,6 +163,9 @@ export default function Home() {
               ))}
             </ul>
           </div>
+          <p className="text-slate-600 mt-8 text-center">
+            Para os pacientes, o app é grátis. Quem quiser mais recursos assina o <strong>NutriAli Premium por R$ 19,90/mês</strong>: foto do prato com IA, gráficos de evolução e plano em PDF.
+          </p>
         </div>
 
         {/* FAQ */}
@@ -182,8 +186,8 @@ export default function Home() {
                 a: 'Não. A IA gera rascunhos de planos e responde dúvidas pontuais dos pacientes — sempre com base nos dados que você cadastrou. O diagnóstico e a prescrição continuam sendo seus.',
               },
               {
-                q: 'E se eu quiser cancelar?',
-                a: 'Você pode cancelar quando quiser, sem multa e sem fidelidade. Seus dados podem ser exportados a qualquer momento.',
+                q: 'Quanto custa para a nutricionista?',
+                a: 'Nada por mês. Quando o paciente paga a consulta pelo app, o NutriAli fica com 10% do valor (depois da taxa do meio de pagamento) e o resto vai direto para a sua conta. Você pode parar de usar quando quiser, sem multa, e seus dados podem ser exportados a qualquer momento.',
               },
             ].map((item) => (
               <details key={item.q} className="glass-card p-5 rounded-xl border border-white/60 group">
