@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: 'As regras de uso do NutriAli para nutricionistas e pacientes: contas, inteligência artificial, planos, cancelamento e responsabilidades.',
 };
 
-const TERMS_VERSION_LABEL = '23 de outubro de 2026';
+const TERMS_VERSION_LABEL = '29 de outubro de 2026';
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="space-y-2">
@@ -85,11 +85,12 @@ export default function TermsPage() {
           </ul>
         </Section>
 
-        <Section title="8. Planos, teste grátis e cancelamento">
+        <Section title="8. Valores, comissão e Premium">
           <ul className="list-disc space-y-1 pl-5">
-            <li>Para nutricionistas, os valores e as condições são os informados no site no momento da contratação, inclusive o período de teste grátis, quando houver.</li>
-            <li>Você pode cancelar quando quiser, sem multa e sem fidelidade. O acesso continua até o fim do período já pago.</li>
-            <li>O uso pelo paciente não é cobrado pelo NutriAli.</li>
+            <li>Para nutricionistas, o NutriAli não cobra mensalidade. Quando o paciente paga uma consulta ou outro serviço pelo aplicativo, o NutriAli fica com 10% do valor líquido (depois da taxa do meio de pagamento) e o restante vai automaticamente para a conta da nutricionista no Asaas.</li>
+            <li>Os pagamentos são processados pelo Asaas, instituição de pagamento. Prazos de recebimento, taxas e estornos seguem as regras do Asaas.</li>
+            <li>Para pacientes, o aplicativo é gratuito. O NutriAli Premium é uma assinatura opcional, pelo valor informado no aplicativo, que libera funções extras. Ela pode ser cancelada quando o paciente quiser, sem multa, e vale até o fim do período já pago.</li>
+            <li>Pedidos de reembolso de consultas pagas pelo app são analisados pela nutricionista; quando houver estorno, ele é feito pelo Asaas.</li>
           </ul>
         </Section>
 
