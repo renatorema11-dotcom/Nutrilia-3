@@ -155,6 +155,7 @@ export default function ApprovalsPage() {
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               <Link href="/admin/exclusoes" className="text-xs font-semibold text-teal-700 hover:text-teal-800">Ver pedidos de exclusão de conta</Link>
               <Link href="/admin/erros" className="text-xs font-semibold text-teal-700 hover:text-teal-800">Ver erros do servidor</Link>
+              <Link href="/admin/premium" className="text-xs font-semibold text-teal-700 hover:text-teal-800">Dar Premium de cortesia</Link>
             </div>
           </div>
           <div className="flex items-center gap-2">
