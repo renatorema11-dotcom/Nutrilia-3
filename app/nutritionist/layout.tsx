@@ -3,7 +3,7 @@
 import { useAuth } from '@/components/auth-provider';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, MessageSquareText, MessageSquare, User, Bot, ShieldCheck, Apple } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquareText, MessageSquare, User, Bot, ShieldCheck, Apple, Wallet } from 'lucide-react';
 import { AppShell, AppLoading, type NavItem } from '@/components/app-shell';
 import { NutritionistAliAssistant } from '@/components/nutritionist-ali-assistant';
 import { NutritionistPending } from '@/components/nutritionist-pending';
@@ -17,6 +17,7 @@ const navigation: NavItem[] = [
   { name: 'Chat com Pacientes', shortName: 'Chat', href: '/nutritionist/chat', icon: MessageSquare, inBottomBar: true },
   { name: 'Assistente IA', shortName: 'Assistente', href: '/nutritionist/assistant', icon: MessageSquareText, inBottomBar: true },
   { name: 'Minha Ali', shortName: 'Minha Ali', href: '/nutritionist/ali', icon: Bot },
+  { name: 'Financeiro', shortName: 'Financeiro', href: '/nutritionist/financeiro', icon: Wallet },
   { name: 'Tabela de alimentos', shortName: 'Alimentos', href: '/nutritionist/foods', icon: Apple },
   { name: 'Meu Perfil', shortName: 'Perfil', href: '/nutritionist/profile', icon: User, inBottomBar: true },
 ];
