@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Badge } from '@/components/ui';
-import { Calendar as CalendarIcon, Clock, Plus, Trash2, CalendarPlus, Video } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, Trash2, CalendarPlus, Video, CreditCard, Loader2 } from 'lucide-react';
 import { format, parseISO, isAfter, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
-import { ApiError, postJson } from '@/lib/api-client';
+import { ApiError, authFetch, postJson } from '@/lib/api-client';
 import { getPatients, type Patient } from '@/lib/patients';
 import { AliAppointmentRequests } from './ali-appointment-requests';
 
@@ -23,7 +23,11 @@ export type Appointment = {
   source?: string;
   meetLink?: string;
   createdBy?: 'patient' | 'nutritionist';
+  // Pagamento pelo app (gravado pelo servidor quando o paciente abre e quando o Asaas confirma o pagamento).
+  payment?: { status: 'pending' | 'paid' | 'refunded'; value?: number };
 };
+
+const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const OTHER_PERSON = '__outra__';
 const byStart = (a: Appointment, b: Appointment) =>
@@ -48,12 +52,42 @@ export function AppointmentScheduler({
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  // Paciente: a nutricionista recebe pelo app? Quanto custa a consulta? E o pagamento que está sendo aberto.
+  const [payInfo, setPayInfo] = useState<{ enabled: boolean; price: number | null }>({ enabled: false, price: null });
+  const [paying, setPaying] = useState<{ id: string; needCpf: boolean; cpf: string; busy: boolean; error: string } | null>(null);
   const { user } = useAuth();
 
   useEffect(() => {
     if (!isNutritionist || !user) return;
     getPatients().then(setPatients).catch(() => setPatients([]));
   }, [isNutritionist, user]);
+
+  useEffect(() => {
+    if (isNutritionist || !user) return;
+    authFetch('/api/payments/consultation', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data) setPayInfo({ enabled: data.enabled === true, price: typeof data.price === 'number' ? data.price : null }); })
+      .catch(() => {});
+  }, [isNutritionist, user]);
+
+  /** Abre o pagamento da consulta no Asaas. Na primeira vez o servidor pede o CPF de quem paga. */
+  const handlePay = async (id: string, cpf = '') => {
+    setPaying({ id, needCpf: !!cpf, cpf, busy: true, error: '' });
+    try {
+      const res = await authFetch('/api/payments/consultation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appointmentId: id, ...(cpf ? { cpf } : {}) }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && typeof data?.invoiceUrl === 'string') {
+        window.location.href = data.invoiceUrl;
+        return;
+      }
+      const error = typeof data?.error === 'string' ? data.error : 'Não foi possível abrir o pagamento agora.';
+      setPaying({ id, needCpf: data?.needCpf === true || !!cpf, cpf, busy: false, error: data?.needCpf && !cpf ? '' : error });
+    } catch {
+      setPaying({ id, needCpf: !!cpf, cpf, busy: false, error: 'Não foi possível abrir o pagamento agora.' });
+    }
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -174,6 +208,43 @@ END:VCALENDAR`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  /** Situação do pagamento da consulta: a nutricionista só acompanha; o paciente paga pelo app. */
+  const renderPayment = (appt: Appointment) => {
+    const status = appt.payment?.status;
+    if (status === 'paid') return <div className="w-full"><Badge variant="success" className="text-[10px]">Consulta paga</Badge></div>;
+    if (isNutritionist) return status === 'pending' ? <div className="w-full"><Badge variant="warning" className="text-[10px]">Aguardando pagamento</Badge></div> : null;
+    // Só as consultas que o servidor conhece (marcadas pelo app ou pela Ali) podem ser pagas.
+    if (!payInfo.enabled || payInfo.price === null || (appt.source !== 'manual' && appt.source !== 'ali')) return null;
+    const open = paying?.id === appt.id ? paying : null;
+    return (
+      <div className="w-full space-y-2 border-t border-slate-100 pt-2">
+        {!open?.needCpf && (
+          <Button onClick={() => handlePay(appt.id)} disabled={!!paying?.busy} className="h-8 text-xs gap-1.5">
+            {open?.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
+            Pagar consulta · {money(payInfo.price)}
+          </Button>
+        )}
+        {open?.needCpf && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              aria-label="CPF de quem vai pagar"
+              placeholder="CPF de quem vai pagar"
+              value={open.cpf}
+              maxLength={14}
+              onChange={(e) => setPaying({ ...open, cpf: e.target.value, error: '' })}
+              className="flex-1 rounded-lg bg-white border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-teal-500 outline-none"
+            />
+            <Button onClick={() => handlePay(appt.id, open.cpf)} disabled={open.busy || !open.cpf} className="h-8 text-xs">
+              {open.busy && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />} Continuar para o pagamento
+            </Button>
+          </div>
+        )}
+        {open?.needCpf && !open.error && <p className="text-xs text-slate-500">O Asaas pede o CPF de quem paga. Ele vai só para o Asaas.</p>}
+        {open?.error && <p role="alert" className="text-xs text-red-700">{open.error}</p>}
+      </div>
+    );
   };
 
   // A lista de cada pessoa só tem as consultas dela: não precisa filtrar pelo nome.
@@ -350,6 +421,7 @@ END:VCALENDAR`;
                       </button>
                     </div>
                   </div>
+                  {renderPayment(appt)}
                 </div>
               ))}
             </div>

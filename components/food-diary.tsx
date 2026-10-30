@@ -10,6 +10,7 @@ import { getUserData, updateUserData } from '@/lib/db';
 import { ApiError, postJson } from '@/lib/api-client';
 import { photoDataUrl } from '@/lib/photo';
 import { AliFoodLogs } from './ali-food-logs';
+import { PremiumButton, usePremium } from './premium';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
 
@@ -34,6 +35,8 @@ export function FoodDiary() {
   const [objective, setObjective] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
+  // Escrever o que comeu é de todos; a foto analisada pela IA é do Premium.
+  const premium = usePremium();
 
   // Using active plan or fallback meals for the diary
   const [todayMeals, setTodayMeals] = useState<{ name: string; time: string; items: string[] }[]>([]);
@@ -262,22 +265,28 @@ export function FoodDiary() {
 
                   <div className="flex justify-between items-center gap-2">
                     <div>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        capture="environment" 
-                        className="hidden" 
-                        ref={fileInputRef}
-                        onChange={handleImageCapture}
-                      />
-                      <Button 
-                        variant="outline" 
-                        className="h-8 px-3 text-xs" 
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <Camera className="w-4 h-4 mr-1" />
-                        {editImage ? 'Trocar Foto' : 'Tirar Foto'}
-                      </Button>
+                      {premium.active ? (
+                        <>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={handleImageCapture}
+                          />
+                          <Button
+                            variant="outline"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            <Camera className="w-4 h-4 mr-1" />
+                            {editImage ? 'Trocar Foto' : 'Tirar Foto'}
+                          </Button>
+                        </>
+                      ) : (
+                        <PremiumButton label="Foto com IA" className="h-8 text-xs" />
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => setEditingMeal(null)}>

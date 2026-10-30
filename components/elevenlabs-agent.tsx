@@ -7,6 +7,7 @@ import { photoDataUrl } from '@/lib/photo';
 import { MEAL_PHOTO_ASK, MEAL_PHOTO_FAILED_MESSAGE, MEAL_PHOTO_WAIT, type MealPhotoAnalysis } from '@/lib/meal-photo';
 import { useConversation, ConversationProvider } from '@elevenlabs/react';
 import { Button } from '@/components/ui';
+import { PremiumButton, usePremium } from '@/components/premium';
 import { Mic, MicOff, Loader2, Bot, Camera } from 'lucide-react';
 
 type PhotoState =
@@ -61,6 +62,8 @@ function AgentInner({
   const sessionUid = useRef<string | null>(null);
   const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Conversar com a Ali é de todos; mandar a foto do prato para a IA é do Premium.
+  const premium = usePremium();
   const pendingPhoto = useRef<{ context: string; at: number } | null>(null);
   const statusRef = useRef(status);
 
@@ -212,22 +215,28 @@ function AgentInner({
       {sessionError && <p role="alert" className="col-span-2 text-sm text-red-700">{sessionError}</p>}
       {status === 'connected' && (
         <div className="col-span-2 text-xs text-slate-500 animate-pulse">
-          {isSpeaking ? 'O Ali está falando...' : 'Ouvindo...'}
+          {isSpeaking ? 'A Ali está falando...' : 'Ouvindo...'}
         </div>
       )}
 
       {/* Foto do prato: a IA descreve e estima as calorias; a Ali comenta por voz. */}
       <div className="col-span-2 w-full space-y-2">
-        <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
-        <Button
-          variant="outline"
-          onClick={() => fileInput.current?.click()}
-          disabled={photo.step === 'analyzing'}
-          className="w-full bg-white text-sm gap-2"
-        >
-          {photo.step === 'analyzing' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4 text-teal-700" />}
-          {photo.step === 'analyzing' ? 'Analisando a foto...' : 'Enviar foto do prato'}
-        </Button>
+        {premium.active ? (
+          <>
+            <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+            <Button
+              variant="outline"
+              onClick={() => fileInput.current?.click()}
+              disabled={photo.step === 'analyzing'}
+              className="w-full bg-white text-sm gap-2"
+            >
+              {photo.step === 'analyzing' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4 text-teal-700" />}
+              {photo.step === 'analyzing' ? 'Analisando a foto...' : 'Enviar foto do prato'}
+            </Button>
+          </>
+        ) : (
+          <PremiumButton label="Foto do prato (Premium)" className="w-full h-10 text-sm" />
+        )}
         {photo.step === 'error' && <p role="alert" className="text-sm text-red-700">{photo.text}</p>}
         {photo.step === 'done' && (
           <div role="status" className="rounded-lg bg-white border border-teal-100 p-3 text-left text-sm space-y-1">
