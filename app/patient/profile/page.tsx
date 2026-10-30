@@ -1,6 +1,7 @@
 'use client';
 
 import { UserProfile } from '@/components/user-profile';
+import { PrivacyCard } from '@/components/privacy-card';
 
 export default function PatientProfilePage() {
   return (
@@ -11,6 +12,10 @@ export default function PatientProfilePage() {
       </div>
       
       <UserProfile />
+
+      <div className="mt-6 w-full max-w-2xl">
+        <PrivacyCard role="patient" />
+      </div>
     </div>
   );
 }

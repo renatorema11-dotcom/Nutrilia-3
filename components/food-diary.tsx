@@ -7,6 +7,10 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import { useAuth } from './auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { ApiError, postJson } from '@/lib/api-client';
+import { photoDataUrl } from '@/lib/photo';
+import { AliFoodLogs } from './ali-food-logs';
+import { PremiumButton, usePremium } from './premium';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
 
@@ -22,12 +26,17 @@ export function FoodDiary() {
   const [entries, setEntries] = useState<Record<string, MealEntry>>({});
   const [editingMeal, setEditingMeal] = useState<string | null>(null);
   const [analyzingMeal, setAnalyzingMeal] = useState<string | null>(null);
+  // Aviso mostrado quando a IA não conseguiu analisar a refeição (nada de texto pronto no lugar).
+  const [analysisNote, setAnalysisNote] = useState<{ meal: string; text: string } | null>(null);
   const [notes, setNotes] = useState('');
   const [editImage, setEditImage] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [hasPlan, setHasPlan] = useState(false);
+  const [objective, setObjective] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
+  // Escrever o que comeu é de todos; a foto analisada pela IA é do Premium.
+  const premium = usePremium();
 
   // Using active plan or fallback meals for the diary
   const [todayMeals, setTodayMeals] = useState<{ name: string; time: string; items: string[] }[]>([]);
@@ -37,6 +46,7 @@ export function FoodDiary() {
     async function loadData() {
       if (user) {
         const data = await getUserData(user.uid);
+        setObjective(typeof data?.patientData?.objective === 'string' ? data.patientData.objective : '');
         if (data?.currentPlan?.days?.[0]?.meals) {
           setHasPlan(true);
           setTodayMeals(data.currentPlan.days[0].meals);
@@ -112,11 +122,8 @@ export function FoodDiary() {
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      // Reduzida antes de guardar e enviar; se o aparelho não conseguir reduzir, segue a original.
+      photoDataUrl(file).then(setEditImage).catch((error) => console.error(error));
     }
   };
 
@@ -132,22 +139,17 @@ export function FoodDiary() {
     setEditingMeal(null);
 
     setAnalyzingMeal(mealName);
+    setAnalysisNote(null);
     try {
-      const res = await fetch('/api/analyze-food', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          mealName,
-          plannedItems: plannedItems.join(', '),
-          actualNotes: notes,
-          image: editImage, // Send base64 image if available
-          objective: 'Manutenção e Saúde'
-        })
+      const data = await postJson('/api/analyze-food', {
+        mealName,
+        plannedItems: plannedItems.join(', '),
+        actualNotes: notes,
+        image: editImage, // Send base64 image if available
+        // O objetivo de verdade, do prontuário; em branco, a IA analisa sem supor um.
+        objective
       });
-      const data = await res.json();
-      
+
       // Update state using functional update to ensure we have the latest state
       let updatedEntries: Record<string, MealEntry> = {};
       setEntries(prev => {
@@ -175,6 +177,8 @@ export function FoodDiary() {
       }
     } catch (e) {
       console.error(e);
+      // O registro da refeição já foi salvo; só a análise ficou sem resposta.
+      setAnalysisNote({ meal: mealName, text: e instanceof ApiError ? e.message : 'Não foi possível analisar esta refeição agora.' });
     } finally {
       setAnalyzingMeal(null);
     }
@@ -209,6 +213,7 @@ export function FoodDiary() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 mt-2">
+        {user && <AliFoodLogs patientUid={user.uid} />}
         {!hasPlan && (
           <div className="text-center py-6">
             <p className="text-slate-600 text-sm">Aguardando seu plano alimentar...</p>
@@ -260,22 +265,28 @@ export function FoodDiary() {
 
                   <div className="flex justify-between items-center gap-2">
                     <div>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        capture="environment" 
-                        className="hidden" 
-                        ref={fileInputRef}
-                        onChange={handleImageCapture}
-                      />
-                      <Button 
-                        variant="outline" 
-                        className="h-8 px-3 text-xs" 
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <Camera className="w-4 h-4 mr-1" />
-                        {editImage ? 'Trocar Foto' : 'Tirar Foto'}
-                      </Button>
+                      {premium.active ? (
+                        <>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={handleImageCapture}
+                          />
+                          <Button
+                            variant="outline"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            <Camera className="w-4 h-4 mr-1" />
+                            {editImage ? 'Trocar Foto' : 'Tirar Foto'}
+                          </Button>
+                        </>
+                      ) : (
+                        <PremiumButton label="Foto com IA" className="h-8 text-xs" />
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => setEditingMeal(null)}>
@@ -299,7 +310,9 @@ export function FoodDiary() {
                           : "hover:bg-slate-50 text-slate-600 border-slate-200"
                       )}
                     >
-                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Refeição realizada
+                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0" />
+                      <span className="sm:hidden">Realizada</span>
+                      <span className="hidden sm:inline">Refeição realizada</span>
                     </button>
                     <button
                       onClick={() => handleStatusUpdate(meal.name, 'different')}
@@ -366,6 +379,11 @@ export function FoodDiary() {
                            entry.aiStatus === 'corrective' ? <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" /> :
                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
                           <p>{entry.aiFeedback}</p>
+                        </div>
+                      ) : analysisNote?.meal === meal.name ? (
+                        <div role="status" className="p-2 rounded-md text-xs flex items-start gap-2 border bg-slate-50 text-slate-600 border-slate-200">
+                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <p>Registro salvo, mas sem análise: {analysisNote.text}</p>
                         </div>
                       ) : null}
                     </div>

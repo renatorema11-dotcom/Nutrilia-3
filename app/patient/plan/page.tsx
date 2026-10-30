@@ -20,6 +20,7 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { handlePrintOrDownload } from '@/lib/print-utils';
 import { useAuth } from '@/components/auth-provider';
+import { PremiumButton, usePremium } from '@/components/premium';
 import { getUserData, updateUserData } from '@/lib/db';
 
 interface MealSection {
@@ -125,6 +126,8 @@ function PlanCard({
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [showFullDetails, setShowFullDetails] = useState(false);
+  // Baixar o plano em PDF é do Premium; ver e marcar as refeições é de todos.
+  const premium = usePremium();
 
   const meals = extractMealsFromPlan(plan);
   const totalMeals = meals.length;
@@ -165,13 +168,17 @@ function PlanCard({
             <Calendar className="w-3 h-3 mr-1 text-emerald-600" />
             {formattedDate}
           </Badge>
-          <Button 
-            variant="outline" 
-            className="h-8 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-            onClick={onExport}
-          >
-            <Download className="w-3 h-3 mr-1" /> Exportar
-          </Button>
+          {premium.active ? (
+            <Button
+              variant="outline"
+              className="h-8 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+              onClick={onExport}
+            >
+              <Download className="w-3 h-3 mr-1" /> Exportar
+            </Button>
+          ) : (
+            <PremiumButton label="Exportar" className="h-8 text-xs" />
+          )}
         </div>
       </CardHeader>
 

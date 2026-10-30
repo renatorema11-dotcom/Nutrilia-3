@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input } from '@/components/ui';
 import { Save, AlertCircle } from 'lucide-react';
 import { useAuth } from './auth-provider';
-import { getUserData, updateUserData } from '@/lib/db';
+import { ApiError, postJson } from '@/lib/api-client';
 
 export function PatientSettings({ 
   patientData, 
@@ -25,6 +25,7 @@ export function PatientSettings({
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (patientData) {
@@ -73,34 +74,21 @@ export function PatientSettings({
     e.preventDefault();
     if (!validate()) return;
     
-    if (user) {
-      const data = await getUserData(user.uid);
-      const history = data?.patientHistory || [];
-      if (history.length > 0) {
-        history[history.length - 1].weight = parseFloat(formData.weight);
-      }
-      
-      await updateUserData(user.uid, {
-        patientData: formData,
-        patientHistory: history
-      });
-    } else {
-      localStorage.setItem('mockPatientData', JSON.stringify(formData));
-      const savedHistory = localStorage.getItem('mockPatientHistory');
-      if (savedHistory) {
-        try {
-          const history = JSON.parse(savedHistory);
-          if (history.length > 0) {
-            history[history.length - 1].weight = parseFloat(formData.weight);
-            localStorage.setItem('mockPatientHistory', JSON.stringify(history));
-          }
-        } catch (err) {}
-      }
+    if (!user || saving) return;
+    setSaving(true);
+    try {
+      // O servidor confere e grava no prontuário; um peso novo vira a medição de hoje.
+      const result = await postJson('/api/patient/profile', formData);
+      setSuccessMsg('Dados atualizados com sucesso!');
+      onSave({ ...patientData, ...(result.profile || {}) });
+    } catch (error) {
+      setErrors({ form: error instanceof ApiError ? error.message : 'Não foi possível salvar agora. Tente de novo em instantes.' });
+    } finally {
+      setSaving(false);
     }
-
-    setSuccessMsg('Dados atualizados com sucesso!');
-    onSave(formData);
   };
+
+  const objectiveOptions = ['Emagrecimento', 'Hipertrofia', 'Manutenção', 'Saúde e Bem-estar'];
 
   return (
     <Card className="w-full max-w-2xl mx-auto">
@@ -160,7 +148,6 @@ export function PatientSettings({
                 id="initialWeight"
                 type="number"
                 label="Peso Inicial (kg)"
-                required
                 value={formData.initialWeight}
                 onChange={handleChange}
               />
@@ -170,9 +157,9 @@ export function PatientSettings({
                 id="targetWeight"
                 type="number"
                 label="Meta de Peso (kg)"
-                required
                 value={formData.targetWeight}
                 onChange={handleChange}
+                placeholder="Opcional"
               />
             </div>
             <div className="space-y-1">
@@ -186,6 +173,11 @@ export function PatientSettings({
                 onChange={handleChange}
                 className="w-full rounded-lg bg-white/80 border border-white/50 px-3 py-2 text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm transition-shadow h-[42px]"
               >
+                <option value="" disabled>Selecione...</option>
+                {/* Objetivo definido pela nutricionista que não está na lista continua aparecendo. */}
+                {formData.objective && !objectiveOptions.includes(formData.objective) && (
+                  <option value={formData.objective}>{formData.objective}</option>
+                )}
                 <option value="Emagrecimento">Emagrecimento</option>
                 <option value="Hipertrofia">Hipertrofia (Ganho de Massa)</option>
                 <option value="Manutenção">Manutenção</option>
@@ -194,6 +186,10 @@ export function PatientSettings({
             </div>
           </div>
 
+          {errors.form && (
+            <p role="alert" className="text-sm text-red-600 font-medium">{errors.form}</p>
+          )}
+
           {successMsg && (
             <div className="p-3 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-sm flex items-center">
               <AlertCircle className="w-4 h-4 mr-2" />
@@ -201,9 +197,9 @@ export function PatientSettings({
             </div>
           )}
 
-          <Button type="submit" className="w-full flex items-center justify-center gap-2">
+          <Button type="submit" disabled={saving} className="w-full flex items-center justify-center gap-2">
             <Save className="h-4 w-4" />
-            Salvar Alterações
+            {saving ? 'Salvando...' : 'Salvar Alterações'}
           </Button>
         </form>
       </CardContent>

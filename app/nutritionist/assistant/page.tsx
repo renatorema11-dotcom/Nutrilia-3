@@ -5,15 +5,19 @@ import { Card, CardContent, Input, Button } from '@/components/ui';
 import { Send, Sparkles, UserRound } from 'lucide-react';
 import { getPatients, Patient } from '@/lib/patients';
 import { useAuth } from '@/components/auth-provider';
+import { ApiError, postJson } from '@/lib/api-client';
+import { firstName } from '@/lib/names';
 
 interface Message {
   role: 'user' | 'ai';
   text: string;
+  /** Aviso de falha mostrado na conversa; não entra no histórico enviado à IA. */
+  error?: boolean;
 }
 
 export default function NutritionistAssistant() {
   const { user } = useAuth();
-  const userName = user?.displayName ? user.displayName.split(' ')[0] : 'Nutricionista';
+  const userName = firstName(user?.displayName || '') || 'Nutricionista';
 
   const [messages, setMessages] = useState<Message[]>([
     { role: 'ai', text: `Olá, ${userName}! Sou seu assistente clínico com IA. Posso resumir casos, buscar dados dos seus pacientes cadastrados e ajudar a revisar protocolos.` }
@@ -59,33 +63,28 @@ export default function NutritionistAssistant() {
         proximaConsulta: p.nextAppointment
       })));
 
-      const res = await fetch('/api/gemini/chat/nutritionist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [...messages, { role: 'user', text: userMessage }],
-          context
-        })
+      const data = await postJson('/api/gemini/chat/nutritionist', {
+        messages: [...messages, { role: 'user', text: userMessage }],
+        context
       });
-
-      const data = await res.json();
 
       if (data.text) {
         setMessages(prev => [...prev, { role: 'ai', text: data.text }]);
       }
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'ai', text: 'Erro ao processar solicitação.' }]);
+      // error: true deixa o aviso fora do histórico enviado à IA nas próximas perguntas.
+      setMessages(prev => [...prev, { role: 'ai', text: error instanceof ApiError ? error.message : 'Erro ao processar solicitação.', error: true }]);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-[calc(100dvh-var(--app-chrome))] lg:h-[calc(100vh-8rem)] flex flex-col">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Assistente IA Clínico</h1>
-        <p className="text-gray-600 mb-6">Seu co-piloto para análise de dados dos seus pacientes.</p>
+        <p className="text-gray-600 mb-4 lg:mb-6">Seu co-piloto para análise de dados dos seus pacientes.</p>
       </div>
 
       <Card className="flex-1 flex flex-col min-h-0 border-emerald-100 shadow-sm">

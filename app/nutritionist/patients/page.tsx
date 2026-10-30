@@ -6,6 +6,14 @@ import { Search, ChevronRight, UserPlus, Users, Loader2, MessageSquare } from 'l
 import Link from 'next/link';
 import { getPatients, Patient } from '@/lib/patients';
 import { AddPatientModal } from '@/components/add-patient-modal';
+import { ExcelDownloadButton } from '@/components/excel-download';
+
+function PlanBadge({ patient }: { patient: Patient }) {
+  if (!patient.currentPlan) return <Badge variant="default">Sem Plano</Badge>;
+  return patient.currentPlan.status === 'approved'
+    ? <Badge variant="success">Plano Ativo</Badge>
+    : <Badge variant="warning">Aprovação Pendente</Badge>;
+}
 
 export default function PatientsList() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -32,6 +40,17 @@ export default function PatientsList() {
     setPatients((prev) => [newPatient, ...prev]);
   };
 
+  // Planilha do Excel com todos os pacientes (peso, meta, próxima consulta e plano), montada aqui mesmo no navegador.
+  const buildPatientsSheet = async () => {
+    const { patientSheetRowOf, patientsSheet, sheetDateKey } = await import('@/lib/sheet-specs');
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
+    const rows = patients
+      .map((patient) => patientSheetRowOf(patient as unknown as Record<string, unknown>, timeZone))
+      .filter((row) => row.name)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    return patientsSheet(rows, sheetDateKey(new Date(), timeZone), { withLastSeen: false });
+  };
+
   const filteredPatients = patients.filter(
     (p) =>
       (p.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
@@ -45,13 +64,16 @@ export default function PatientsList() {
           <h1 className="text-2xl font-bold text-gray-900">Pacientes</h1>
           <p className="text-gray-600">Gerencie todos os seus pacientes em tempo real.</p>
         </div>
-        <Button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-2 shadow-sm"
-        >
-          <UserPlus className="w-4 h-4" />
-          + Novo Paciente
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExcelDownloadButton build={buildPatientsSheet} disabled={loading || patients.length === 0} />
+          <Button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-2 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" />
+            + Novo Paciente
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -100,23 +122,22 @@ export default function PatientsList() {
                 >
                   <Link
                     href={`/nutritionist/patients/${patient.id}`}
-                    className="flex-1 min-w-0 pr-4 group"
+                    className="flex-1 min-w-0 pr-3 sm:pr-4 group"
                   >
-                    <p className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors">{patient.name}</p>
+                    <p className="font-medium text-gray-900 group-hover:text-emerald-700 transition-colors truncate">{patient.name}</p>
                     <p className="text-sm text-gray-500 truncate">
-                      {patient.email} • {patient.age} anos • {patient.objective}
+                      {/* Quem se cadastrou sozinho e ainda não fez a triagem não tem idade nem objetivo. */}
+                      {[patient.email, patient.age ? `${patient.age} anos` : 'triagem pendente', patient.objective].filter(Boolean).join(' • ')}
                     </p>
+                    {/* No celular o status do plano fica abaixo do nome, para o nome não ser cortado. */}
+                    <div className="sm:hidden mt-1.5">
+                      <PlanBadge patient={patient} />
+                    </div>
                   </Link>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {patient.currentPlan ? (
-                      patient.currentPlan.status === 'approved' ? (
-                        <Badge variant="success">Plano Ativo</Badge>
-                      ) : (
-                        <Badge variant="warning">Aprovação Pendente</Badge>
-                      )
-                    ) : (
-                      <Badge variant="default">Sem Plano</Badge>
-                    )}
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <span className="hidden sm:inline-flex">
+                      <PlanBadge patient={patient} />
+                    </span>
                     <Link
                       href={`/nutritionist/chat?patientId=${patient.id}`}
                       className="p-1.5 text-teal-700 hover:bg-teal-50 rounded-lg border border-teal-200 transition-colors flex items-center gap-1 text-xs font-semibold"

@@ -1,87 +1,306 @@
 {
-  "name": "NutriAli — Ali Ações (gateway de execução)",
+  "name": "NutriConnect — Ali | Plano, Diário e Consultas",
   "nodes": [
     {
+      "id": "ali-webhook",
+      "name": "Receber ação da Ali",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ],
       "parameters": {
         "httpMethod": "POST",
-        "path": "nutriali-agent",
+        "path": "nutriconnect-ali-acoes-v1",
+        "authentication": "headerAuth",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-ali",
-      "name": "Webhook do Ali",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [-200, 300],
-      "webhookId": "REPLACE-WITH-GENERATED-ID"
+      "webhookId": "0d8603ba-9900-4e23-82ce-ff84d74c13df"
     },
     {
+      "id": "ali-validate",
+      "name": "Validar ação e dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const incoming = $input.first().json;\nconst body = incoming.body;\nfunction result(status, speech, extra = {}) { return [{json:{valid:false,status,reply:{ok:false,speech},...extra}}]; }\nif (!body || typeof body !== 'object' || Array.isArray(body)) return result(400,'Envie um objeto JSON válido.');\nconst allowed = ['get_patient_data','log_meal','log_measurement','request_appointment'];\nif (!allowed.includes(body.action)) return result(400,'Ação não reconhecida.');\nif (typeof body.patientUid !== 'string' || !body.patientUid.trim() || body.patientUid.length > 128 || body.patientUid.includes('/')) return result(400,'Paciente não identificado. Entre novamente no aplicativo.');\nconst p = body.payload === undefined ? {} : body.payload;\nif (!p || typeof p !== 'object' || Array.isArray(p)) return result(400,'Dados da ação inválidos.');\nif (body.action !== 'get_patient_data' && body.confirmed !== true) return result(422,'Confirme os dados com o paciente antes de registrar esta ação.');\nconst payload = {};\nconst str = (v, max) => typeof v === 'string' && v.trim().length <= max ? v.trim() : null;\nconst number = (v) => typeof v === 'number' ? v : typeof v === 'string' && /^[0-9]+(?:[.,][0-9]+)?$/.test(v.trim()) ? Number(v.trim().replace(',','.')) : NaN;\nif (body.action === 'log_meal') {\n  payload.description = str(p.description, 2000);\n  if (!payload.description) return result(422,'O que você comeu nesta refeição?');\n  payload.mealTime = p.mealTime === undefined ? '' : str(p.mealTime,80);\n  if (payload.mealTime === null) return result(422,'Informe o horário ou o nome da refeição.');\n}\nif (body.action === 'log_measurement') {\n  payload.weight = number(p.weight);\n  if (!Number.isFinite(payload.weight) || payload.weight <= 20 || payload.weight > 500) return result(422,'Informe um peso válido em quilogramas.');\n  if (p.bodyFat !== undefined && p.bodyFat !== null && p.bodyFat !== '') {\n    payload.bodyFat = number(p.bodyFat);\n    if (!Number.isFinite(payload.bodyFat) || payload.bodyFat <= 0 || payload.bodyFat >= 100) return result(422,'Informe um percentual de gordura entre zero e cem.');\n  }\n}\nif (body.action === 'request_appointment') {\n  payload.preferredDate = str(p.preferredDate,100);\n  payload.notes = p.notes === undefined ? '' : str(p.notes,1000);\n  if (!payload.preferredDate) return result(422,'Qual data e horário você prefere para a consulta?');\n  if (payload.notes === null) return result(422,'Resuma as observações da consulta.');\n}\nconst token = incoming.headers?.['x-patient-token'];\nif (typeof token !== 'string' || token.length < 20 || token.length > 8192) return result(401,'Sua sessão precisa ser autenticada novamente no aplicativo.');\nreturn [{json:{valid:true,request:{action:body.action,patientUid:body.patientUid,payload,confirmed:body.confirmed === true},patientToken:token}}];"
+      }
+    },
+    {
+      "id": "ali-valid",
+      "name": "Dados válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -220,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-condition",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ali-config",
+      "name": "Configurar endereço e liberação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        -120
+      ],
+      "parameters": {
+        "jsCode": "// Ativar somente após validar a identidade no backend e testar a persistência no app.\nconst productionReady = false;\nconst appBaseUrl = '';\nconst data = $input.first().json;\nconst validUrl = appBaseUrl.startsWith('https://') && appBaseUrl.length > 8 && !appBaseUrl.includes(' ');\nif (!productionReady || !validUrl) {\n  return [{json:{...data,valid:false,status:503,reply:{ok:false,speech:'A integração da Ali está em configuração. Nenhum registro foi alterado.'}}}];\n}\nconst base = appBaseUrl.endsWith('/') ? appBaseUrl.slice(0,-1) : appBaseUrl;\nreturn [{json:{...data,apiUrl:base+'/api/agent/action'}}];"
+      }
+    },
+    {
+      "id": "ali-ready",
+      "name": "Integração liberada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        -120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-condition",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ali-call",
+      "name": "Executar no NutriConnect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        -240
+      ],
       "parameters": {
         "method": "POST",
-        "url": "https://SEU-APP-NA-VERCEL.vercel.app/api/agent/action",
+        "url": "={{ $json.apiUrl }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
-              "name": "x-webhook-secret",
-              "value": "SEU-SEGREDO-COMPARTILHADO"
+              "name": "x-patient-token",
+              "value": "={{ $json.patientToken }}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
         "options": {
+          "timeout": 15000,
           "response": {
             "response": {
-              "responseFormat": "autodetect"
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
             }
           }
         }
       },
-      "id": "call-nutriali-api",
-      "name": "Executar Ação no NutriAli",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [0, 300]
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
     },
     {
+      "id": "ali-normalize",
+      "name": "Confirmar resultado do app",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        -240
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst body = r.body;\nconst status = Number(r.statusCode);\nif (r.error || !body || typeof body !== 'object' || typeof body.ok !== 'boolean' || typeof body.speech !== 'string') {\n return [{json:{status:502,reply:{ok:false,speech:'Não consegui confirmar o resultado no aplicativo. Confira o registro antes de tentar novamente.'}}}];\n}\nconst ok = status >= 200 && status < 300 && body.ok === true;\nreturn [{json:{status:ok?200:(status>=400&&status<=599?status:422),reply:{ok,speech:body.speech,...(ok && body.patient ? {patient:body.patient}: {}),...(ok && body.approvedPlan ? {approvedPlan:body.approvedPlan}: {})}}}];"
+      }
+    },
+    {
+      "id": "ali-reply",
+      "name": "Responder à Ali",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        980,
+        80
+      ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {}
-      },
-      "id": "respond-ali",
-      "name": "Responder ao Ali",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [200, 300]
+        "responseBody": "={{ $json.reply }}",
+        "options": {
+          "responseCode": "={{ $json.status }}"
+        }
+      }
+    },
+    {
+      "id": "ali-notes",
+      "name": "Configuração pendente",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        -550
+      ],
+      "parameters": {
+        "width": 1040,
+        "height": 400,
+        "content": "## Ali • Plano, diário e consultas\n\nRascunho de configuração. Não publicar antes dos testes reais.\n\n1. Webhook: credencial Header Auth x-ali-webhook-key, igual ao segredo da ferramenta ElevenLabs.\n2. HTTP Request: credencial Header Auth x-webhook-secret, igual a AGENT_API_SECRET do servidor. Não incluir segredos neste JSON.\n3. App: Firebase Admin do projeto correto e ID token do paciente em x-patient-token. No ElevenLabs, usar a variável secreta secret__patientToken.\n4. Configurar endereço e liberação: preencher appBaseUrl HTTPS. Liberar apenas em teste controlado com paciente fictício; publicar depois da conferência nas telas.\n5. O plano deve estar aprovado; consulta é um pedido pendente de confirmação. Conferir regras e índices antes da publicação.\n\nSem retries automáticos de escrita e sem salvar dados de execução. Resposta HTTP 200 sem ok=true não confirma a ação. Consulte n8n/README.md."
+      }
     }
   ],
   "connections": {
-    "Webhook do Ali": {
+    "Receber ação da Ali": {
       "main": [
         [
-          "Executar Ação no NutriAli"
+          {
+            "node": "Validar ação e dados",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
-    "Executar Ação no NutriAli": {
+    "Validar ação e dados": {
       "main": [
         [
-          "Responder ao Ali"
+          {
+            "node": "Dados válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dados válidos?": {
+      "main": [
+        [
+          {
+            "node": "Configurar endereço e liberação",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder à Ali",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configurar endereço e liberação": {
+      "main": [
+        [
+          {
+            "node": "Integração liberada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Integração liberada?": {
+      "main": [
+        [
+          {
+            "node": "Executar no NutriConnect",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder à Ali",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Executar no NutriConnect": {
+      "main": [
+        [
+          {
+            "node": "Confirmar resultado do app",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar resultado do app": {
+      "main": [
+        [
+          {
+            "node": "Responder à Ali",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "executionTimeout": 45
   },
-  "pinData": {},
   "active": false,
-  "tags": [
-    {
-      "name": "nutriali"
-    }
-  ]
+  "pinData": {}
 }
