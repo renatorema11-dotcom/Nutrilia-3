@@ -4,6 +4,8 @@ import { AiError, aiErrorResponse, generateAiJson } from '@/lib/ai';
 import { clip, guardAi, parseImage } from '@/lib/ai-guard';
 import { mealPhotoMessage, mealPhotoPrompt, normalizeMealPhoto, planSummary } from '@/lib/meal-photo';
 import { addMealTaco } from '@/lib/meal-photo-taco';
+import { PREMIUM_REQUIRED_MESSAGE } from '@/lib/premium';
+import { hasPremium } from '@/lib/premium-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +43,10 @@ export async function POST(req: Request) {
     if (!image) return NextResponse.json({ error: 'Envie a foto em JPG, PNG ou WebP.' }, { status: 422 });
     if (image.data.length > MAX_IMAGE_BASE64) {
       return NextResponse.json({ error: 'A foto ficou grande demais. Tire outra ou escolha uma menor.' }, { status: 413 });
+    }
+    // A foto do prato é do Premium.
+    if (!(await hasPremium(getAdminDb(), guard.caller.uid))) {
+      return NextResponse.json({ error: PREMIUM_REQUIRED_MESSAGE, premium: true }, { status: 402 });
     }
 
     const context = await patientContext(guard.caller.uid);
