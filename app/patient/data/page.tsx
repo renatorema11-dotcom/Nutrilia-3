@@ -5,10 +5,13 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/components/auth-provider';
+import { PremiumLock, usePremium } from '@/components/premium';
 import { getUserData } from '@/lib/db';
 
 export default function PatientData() {
   const { user } = useAuth();
+  // Os números do dia são de todos; o gráfico da evolução é do Premium.
+  const premium = usePremium();
   const [patientData, setPatientData] = useState<any>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -87,6 +90,7 @@ export default function PatientData() {
         </Card>
       </div>
 
+      {premium.active ? (
       <Card>
         <CardHeader>
           <CardTitle>Evolução de Peso</CardTitle>
@@ -107,6 +111,7 @@ export default function PatientData() {
           </div>
         </CardContent>
       </Card>
+      ) : !premium.loading && <PremiumLock feature="charts" />}
     </div>
   );
 }
