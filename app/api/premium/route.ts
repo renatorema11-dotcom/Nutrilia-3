@@ -8,7 +8,10 @@ import { reportServerError } from '@/lib/server-alerts';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** { action: 'assinar', cpf } abre o pagamento do Premium; { action: 'cancelar' } encerra a assinatura. Só o próprio paciente. */
+/**
+ * { action: 'assinar', cpf? } abre o pagamento do Premium; { action: 'cancelar' } encerra a assinatura. Só o próprio paciente.
+ * O CPF só é preciso na primeira cobrança no Asaas: sem ele, responde needCpf.
+ */
 export async function POST(req: Request) {
   const account = await verifyAccount(req);
   if (!account) return json({ error: 'Entre novamente no aplicativo.' }, 401);
@@ -32,7 +35,8 @@ export async function POST(req: Request) {
     }
     if (body.action !== 'assinar') return json({ error: 'Dados inválidos.' }, 400);
     const result = await startPremium(db, account.uid, { email: account.email, cpf: validCpf(body.cpf) });
-    return result.ok ? json({ invoiceUrl: result.invoiceUrl }) : json({ error: result.error }, result.status);
+    if (result.ok) return json({ invoiceUrl: result.invoiceUrl });
+    return json({ error: result.error, ...(result.needCpf ? { needCpf: true } : {}) }, result.status);
   } catch (error) {
     // Recusa do Asaas por causa dos dados (ex.: CPF que ele não aceita) volta para a pessoa corrigir.
     if (error instanceof AsaasError && error.status === 400) return json({ error: error.message }, 422);
