@@ -8,14 +8,20 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   return fetch(input, { ...init, headers });
 }
 
-/** Erro com mensagem pronta para mostrar na tela (vinda do servidor, em português). */
-export class ApiError extends Error {}
+/** Erro com mensagem pronta para mostrar na tela (vinda do servidor, em português). needCpf: o Asaas pede o CPF de quem paga. */
+export class ApiError extends Error {
+  needCpf = false;
+}
 
 /** POST com JSON e login. Devolve a resposta lida ou lança ApiError com a mensagem do servidor. */
 export async function postJson(url: string, body: unknown): Promise<any> {
   const res = await authFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(typeof data?.error === 'string' ? data.error : 'Não foi possível concluir o pedido agora.');
+  if (!res.ok) {
+    const error = new ApiError(typeof data?.error === 'string' ? data.error : 'Não foi possível concluir o pedido agora.');
+    error.needCpf = data?.needCpf === true;
+    throw error;
+  }
   return data;
 }
 
