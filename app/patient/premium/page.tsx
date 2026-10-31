@@ -15,23 +15,27 @@ export default function PremiumPage() {
   const [cpf, setCpf] = useState('');
   const [busy, setBusy] = useState<'' | 'assinar' | 'cancelar'>('');
   const [message, setMessage] = useState('');
+  const [askCpf, setAskCpf] = useState(false);
 
   const subscribed = premium?.subscriptionActive === true;
   const until = premiumUntil(premium);
   const courtesy = typeof premium?.courtesyUntil === 'string' && Date.parse(premium.courtesyUntil) > Date.now();
+  // Quem já assinou já é cliente no Asaas: reabrir o pagamento em aberto não pede o CPF de novo, a não ser que o servidor peça.
+  const needCpf = !subscribed || askCpf;
 
   const subscribe = async () => {
     setMessage('');
-    if (!validCpf(cpf)) {
+    if (needCpf && !validCpf(cpf)) {
       setMessage('Confira o CPF: o Asaas pede o CPF de quem paga.');
       return;
     }
     setBusy('assinar');
     try {
-      const data = await postJson('/api/premium', { action: 'assinar', cpf });
+      const data = await postJson('/api/premium', { action: 'assinar', ...(needCpf ? { cpf } : {}) });
       // O pagamento abre no site do Asaas; quando ele confirmar, o Premium liga sozinho nesta conta.
       window.location.href = data.invoiceUrl;
     } catch (error) {
+      if (error instanceof ApiError && error.needCpf) setAskCpf(true);
       setMessage(error instanceof ApiError ? error.message : 'Não foi possível abrir o pagamento agora.');
       setBusy('');
     }
@@ -93,7 +97,9 @@ export default function PremiumPage() {
 
           {!loading && !active && (
             <div className="space-y-3 border-t border-slate-200 pt-5">
-              <Input id="cpf" label="CPF de quem vai pagar" placeholder="000.000.000-00" maxLength={14} value={cpf} onChange={(e) => setCpf(e.target.value)} />
+              {needCpf && (
+                <Input id="cpf" label="CPF de quem vai pagar" placeholder="000.000.000-00" maxLength={14} value={cpf} onChange={(e) => setCpf(e.target.value)} />
+              )}
               <Button onClick={subscribe} disabled={!!busy} className="w-full bg-amber-600 hover:bg-amber-700 text-white gap-2">
                 {busy === 'assinar' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}
                 {subscribed ? 'Abrir o pagamento em aberto' : `Assinar por ${PREMIUM_PRICE_LABEL}/mês`}
