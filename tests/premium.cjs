@@ -83,6 +83,33 @@ async function check(name, fn) { await fn(); count++; }
     assert.equal(asaas.calls.filter((c) => c.path === '/subscriptions').length, 1);
   });
 
+  await check('pagamento em aberto: abre a cobrança mais antiga, não a do mês seguinte que o Asaas já gerou', async () => {
+    const { db } = createFirestore();
+    const charge = (id, status, dueDate) => ({ id, status, dueDate, invoiceUrl: `https://asaas.test/i/${id}` });
+    const nov = charge('nov', 'PENDING', '2026-11-01');
+    const dez = charge('dez', 'PENDING', '2026-12-01');
+
+    // Primeiro clique em assinar: o Asaas já devolve as duas, a mais nova primeiro.
+    await db.collection('patients').doc('p2').set({ name: 'Bia' });
+    const fresh = fakeAsaas({
+      'POST /customers': { id: 'cus_2' },
+      'POST /subscriptions': { id: 'sub_2' },
+      'GET /subscriptions/sub_2/payments': { data: [dez, nov] },
+    });
+    const first = await lib.startPremium(db, 'p2', { email: 'b@b.c', cpf: '52998224725' }, fresh.request, NOW);
+    assert.equal(first.invoiceUrl, 'https://asaas.test/i/nov');
+
+    // Voltou depois: vale o mesmo, em qualquer ordem, e a vencida vem antes da que ainda vai vencer.
+    await db.collection('patients').doc('p1').set({ name: 'Ana', premium: { subscriptionActive: true } });
+    await db.collection('billing').doc('p1').set({ asaasCustomerId: 'cus_1', premiumSubscriptionId: 'sub_1' });
+    const reopen = async (data) => (await lib.startPremium(db, 'p1', { email: 'a@b.c', cpf: null }, fakeAsaas({ 'GET /subscriptions/sub_1/payments': { data } }).request, NOW)).invoiceUrl;
+    assert.equal(await reopen([dez, nov]), 'https://asaas.test/i/nov');
+    assert.equal(await reopen([nov, dez]), 'https://asaas.test/i/nov');
+    assert.equal(await reopen([dez, charge('out', 'OVERDUE', '2026-10-01')]), 'https://asaas.test/i/out');
+    // Mês já pago não conta.
+    assert.equal(await reopen([dez, charge('nov', 'RECEIVED', '2026-11-01')]), 'https://asaas.test/i/dez');
+  });
+
   await check('assinar de novo com Premium ativo e nada em aberto: recusa; prontuário que não existe: recusa', async () => {
     const { db } = createFirestore();
     await db.collection('patients').doc('p1').set({ name: 'Ana', premium: { paidUntil: '2026-12-01T00:00:00.000Z' } });
