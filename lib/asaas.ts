@@ -6,12 +6,17 @@ import { AsaasError, asaasRequest, ensureCustomer, todayInBrasilia, type AsaasRe
 import { CONSULTATION_REFERENCE, settleConsultationPayment } from './consultation-payments';
 import { PREMIUM_PRICE, extendPaidUntil, isPremiumActive } from './premium';
 
-/** Link da cobrança em aberto de uma assinatura, para o paciente pagar (Pix, cartão ou boleto). */
+/**
+ * Link da cobrança em aberto de uma assinatura, para o paciente pagar (Pix, cartão ou boleto).
+ * O Asaas já gera a cobrança do mês seguinte e lista a mais nova primeiro: vale a de vencimento mais antigo.
+ */
 async function openInvoice(request: AsaasRequest, subscriptionId: string): Promise<string | null> {
   try {
     const list = await request(`/subscriptions/${encodeURIComponent(subscriptionId)}/payments`);
-    const open = (Array.isArray(list?.data) ? list.data : []).find((payment: any) => payment?.status === 'PENDING' || payment?.status === 'OVERDUE');
-    return typeof open?.invoiceUrl === 'string' ? open.invoiceUrl : null;
+    const open = (Array.isArray(list?.data) ? list.data : [])
+      .filter((payment: any) => (payment?.status === 'PENDING' || payment?.status === 'OVERDUE') && typeof payment?.invoiceUrl === 'string')
+      .sort((a: any, b: any) => String(a?.dueDate).localeCompare(String(b?.dueDate)));
+    return open[0]?.invoiceUrl ?? null;
   } catch (error) {
     // Assinatura que não existe mais no Asaas: o paciente assina de novo.
     if (error instanceof AsaasError && error.status === 404) return null;
