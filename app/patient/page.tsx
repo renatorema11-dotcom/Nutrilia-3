@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
-import { Calendar, MessageSquare, Apple, Sparkles, Loader2, Download, Settings, Activity, Save, FileText } from 'lucide-react';
+import { MessageSquare, Sparkles, Loader2, Download, Settings, Activity, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
@@ -23,6 +23,9 @@ import { PremiumButton, PremiumLock, usePremium } from '@/components/premium';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
 import { ApiError, postJson } from '@/lib/api-client';
+import { formatKgShort } from '@/lib/format';
+import { firstName } from '@/lib/names';
+import { planTextToMarkdown } from '@/lib/plan-text';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
@@ -31,7 +34,7 @@ export default function PatientDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
   const [observations, setObservations] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [hasPlan, setHasPlan] = useState(false);
+  const [planError, setPlanError] = useState('');
   const printRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user } = useAuth();
@@ -42,24 +45,11 @@ export default function PatientDashboard() {
   };
 
   useEffect(() => {
-    const isValidPlanFormat = (data: any) => {
-      try {
-        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-        if (!Array.isArray(parsed)) return false;
-        return parsed.every((plan: any) => plan && typeof plan === 'object' && 'id' in plan);
-      } catch {
-        return false;
-      }
-    };
-
-    async function loadData() {
+        async function loadData() {
       // Enquanto a sessão não chega, o painel fica em branco: nada de paciente de exemplo no lugar.
       if (!user) return;
       const data = await getUserData(user.uid);
-      if (data?.savedPlans && isValidPlanFormat(data.savedPlans) && data.savedPlans.length > 0) {
-        setHasPlan(true);
-      }
-      const patient = data?.patientData;
+            const patient = data?.patientData;
       if (patient?.age && patient?.weight && patient?.height) {
         setPatientData({ ...patient, name: patient.name || user.displayName || 'Paciente', objective: patient.objective || 'Saúde e Bem-estar' });
       } else {
@@ -73,6 +63,7 @@ export default function PatientDashboard() {
   const generateCreativePlan = async () => {
     if (!patientData) return;
     setIsGenerating(true);
+    setPlanError('');
     try {
       // Só o que a IA precisa: o nome e o prontuário inteiro (fotos, medições) não saem do aparelho.
       const data = await postJson('/api/gemini/generate-creative-plan', {
@@ -87,7 +78,7 @@ export default function PatientDashboard() {
       }
     } catch (error) {
       console.error(error);
-      if (error instanceof ApiError) alert(error.message);
+      setPlanError(error instanceof ApiError ? error.message : 'Não foi possível criar o cardápio agora. Tente de novo em instantes.');
     } finally {
       setIsGenerating(false);
     }
@@ -186,6 +177,7 @@ export default function PatientDashboard() {
                   <Sparkles className="w-4 h-4" />
                   Gerar Cardápio Criativo
                 </Button>
+                {planError && <p role="alert" className="text-sm font-medium text-red-700">{planError}</p>}
               </div>
             )}
 
@@ -199,7 +191,7 @@ export default function PatientDashboard() {
             {creativePlan && !isGenerating && (
               <div className="mt-4 bg-white/50 border border-white/60 p-4 rounded-xl">
                 <div ref={printRef} className="markdown-body text-sm text-slate-700 space-y-4 p-4">
-                  <Markdown>{creativePlan}</Markdown>
+                  <Markdown>{planTextToMarkdown(creativePlan)}</Markdown>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 mt-4">
                   <Button onClick={savePlan} disabled={isSaving} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
@@ -214,7 +206,7 @@ export default function PatientDashboard() {
                   ) : (
                     <PremiumButton label="Exportar PDF" className="flex-1 text-xs h-9" />
                   )}
-                  <Button onClick={() => { if (window.confirm('Você tem certeza?')) setCreativePlan(''); }} variant="outline" className="flex-1 text-xs h-9">
+                  <Button onClick={() => { if (window.confirm('Descartar este cardápio e gerar outro?')) setCreativePlan(''); }} variant="outline" className="flex-1 text-xs h-9">
                     Gerar nova opção
                   </Button>
                 </div>
@@ -229,8 +221,7 @@ export default function PatientDashboard() {
         </div>
       </div>
       
-      {hasPlan ? (
-        <div className="flex flex-col gap-6 mt-6">
+      <div className="flex flex-col gap-6 mt-6">
           {/* Gráficos e conquistas são do Premium; enquanto o Premium carrega, nada aparece no lugar. */}
           {premium.active ? (
             <>
@@ -263,13 +254,6 @@ export default function PatientDashboard() {
             </div>
           </div>
         </div>
-      ) : (
-        <div className="mt-6 border border-slate-200 border-dashed rounded-xl p-12 flex flex-col items-center justify-center text-center bg-white/50">
-          <FileText className="w-12 h-12 text-slate-300 mb-4" />
-          <h3 className="text-lg font-medium text-slate-800">Nenhum plano alimentar ativo</h3>
-          <p className="text-slate-600 mt-2 max-w-md">Para visualizar seu diário de refeições, metas e evolução, gere um novo plano criativo com IA e salve-o em seus planos.</p>
-        </div>
-      )}
     </>
   );
 
@@ -278,12 +262,12 @@ export default function PatientDashboard() {
       <GuidedTour />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold text-slate-800">Olá, {patientData.name.split(' ')[0]}</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Olá, {firstName(patientData.name)}</h1>
           <p className="text-slate-600">Bem-vindo(a) de volta ao seu painel.</p>
           
           <div className="flex flex-wrap gap-2 sm:gap-4 mt-2">
             <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Objetivo: {patientData.objective}</span>
-            <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Peso: {patientData.weight}kg</span>
+            <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Peso: {formatKgShort(patientData.weight)} kg</span>
           </div>
         </div>
 
