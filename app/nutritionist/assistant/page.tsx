@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Markdown from 'react-markdown';
 import { Card, CardContent, Input, Button } from '@/components/ui';
 import { Send, Sparkles, UserRound } from 'lucide-react';
 import { getPatients, Patient } from '@/lib/patients';
@@ -96,7 +97,9 @@ export default function NutritionistAssistant() {
                   {msg.role === 'user' ? <UserRound className="h-5 w-5 text-gray-600" /> : <Sparkles className="h-5 w-5 text-emerald-600" />}
                 </div>
                 <div className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-gray-900 text-white' : 'bg-emerald-50 text-gray-800 border border-emerald-100'}`}>
-                  <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                  {msg.role === 'ai' && !msg.error
+                    ? <div className="markdown-body text-sm"><Markdown>{msg.text}</Markdown></div>
+                    : <p className="text-sm whitespace-pre-wrap">{msg.text}</p>}
                 </div>
               </div>
             </div>
