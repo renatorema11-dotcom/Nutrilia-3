@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { aiErrorResponse, generateAi } from "@/lib/ai";
 import { clip, guardAi } from "@/lib/ai-guard";
+import { planTextToMarkdown } from "@/lib/plan-text";
 
 export const runtime = 'nodejs';
 
@@ -27,9 +28,15 @@ Baseado nas seguintes informações do paciente:
 ${observations ? `- Observações/Preferências: ${observations}` : ''}
 
 Crie um "Plano Criativo" (Menu de 1 dia) inovador, saboroso e alinhado ao objetivo do paciente e suas observações (se houver).
-Formate a resposta em Markdown limpo, em português do Brasil, sem marcações ou introduções genéricas. Seja direto e inspirador.`;
+Responda em português do Brasil, em Markdown simples, sem introdução, sem tabelas e sem HTML, exatamente neste formato:
+## Café da manhã (07:30)
+- alimento com a quantidade
+- outro alimento com a quantidade
+Use um título ## para cada refeição do dia, com o horário entre parênteses, e um alimento por linha.
+No fim, um título ## Dicas com no máximo 3 dicas curtas. Seja direto e inspirador.`;
 
-    const text = await generateAi({ prompt, maxTokens: 1500 });
+    // Se a IA ainda mandar tabela ou HTML, o texto é arrumado antes de ir para a tela.
+    const text = planTextToMarkdown(await generateAi({ prompt, maxTokens: 2500 }));
 
     return NextResponse.json({ text });
   } catch (error) {
