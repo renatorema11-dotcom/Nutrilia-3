@@ -42,6 +42,7 @@ export default function PatientNutritionistSelectionPage() {
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [modalNutritionist, setModalNutritionist] = useState<RegisteredNutritionist | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
+  const [selectError, setSelectError] = useState('');
 
   useEffect(() => {
     async function loadData() {
@@ -71,6 +72,7 @@ export default function PatientNutritionistSelectionPage() {
 
   const handleConfirmSelect = async () => {
     if (!modalNutritionist || !user?.uid) return;
+    setSelectError('');
     setSelectingId(modalNutritionist.id);
 
     try {
@@ -105,13 +107,13 @@ export default function PatientNutritionistSelectionPage() {
         nutritionistSpecialty: modalNutritionist.specialty
       }));
 
-      setSuccessMsg(`Você contratou ${modalNutritionist.displayName}! Seu nome já aparece na lista de pacientes desse profissional.`);
+      setSuccessMsg(`Pronto! ${modalNutritionist.displayName} agora acompanha você e já vê o seu nome na lista de pacientes.`);
       setIsChanging(false);
       setModalNutritionist(null);
       setTimeout(() => setSuccessMsg(''), 7000);
     } catch (err) {
       console.error('Erro ao vincular nutricionista:', err);
-      alert('Não foi possível concluir a escolha agora. Tente de novo em instantes.');
+      setSelectError('Não foi possível concluir a escolha agora. Tente de novo em instantes.');
     } finally {
       setSelectingId(null);
     }
@@ -429,7 +431,7 @@ export default function PatientNutritionistSelectionPage() {
                           ) : (
                             <>
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              Contratar / Selecionar
+                              Escolher
                             </>
                           )}
                         </Button>
@@ -500,6 +502,7 @@ export default function PatientNutritionistSelectionPage() {
                 )}
               </Button>
             </div>
+            {selectError && <p role="alert" className="px-6 pb-4 text-sm font-medium text-red-700">{selectError}</p>}
           </div>
         </div>
       )}
