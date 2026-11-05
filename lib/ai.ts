@@ -46,7 +46,8 @@ export interface AiRequest {
 /** Tira o raciocínio que alguns modelos devolvem junto (<think>…</think>) e os espaços das pontas. */
 export function cleanAnswer(content: unknown): string {
   if (typeof content !== 'string') return '';
-  return content.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^[\s\S]*<\/think>/, '').trim();
+  // \uFFFD: caractere quebrado que alguns modelos deixam no fim da resposta.
+  return content.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^[\s\S]*<\/think>/, '').replace(/\uFFFD/g, '').trim();
 }
 
 /** Acha o objeto JSON dentro da resposta, mesmo que venha entre crases ou com texto em volta. */
