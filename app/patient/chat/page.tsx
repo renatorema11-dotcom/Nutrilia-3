@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, Suspense } from 'react';
+import Markdown from 'react-markdown';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, Input, Button } from '@/components/ui';
 import { Send, Bot, User, Stethoscope, Loader2 } from 'lucide-react';
@@ -146,7 +147,9 @@ function PatientChatContent() {
                   {msg.role === 'user' ? <User className="h-5 w-5 text-emerald-600" /> : <Bot className="h-5 w-5 text-purple-600" />}
                 </div>
                 <div className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                  <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                  {msg.role === 'ai' && !msg.error
+                    ? <div className="markdown-body text-sm"><Markdown>{msg.text}</Markdown></div>
+                    : <p className="text-sm whitespace-pre-wrap">{msg.text}</p>}
                 </div>
               </div>
             </div>
