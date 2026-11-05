@@ -7,6 +7,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useAuth } from '@/components/auth-provider';
 import { PremiumLock, usePremium } from '@/components/premium';
 import { getUserData } from '@/lib/db';
+import { formatDayKey, formatKgShort } from '@/lib/format';
 
 export default function PatientData() {
   const { user } = useAuth();
@@ -48,7 +49,7 @@ export default function PatientData() {
 
   const chartData = measurements.map((m: any) => ({
     ...m,
-    dateFormatted: m.date
+    dateFormatted: formatDayKey(m.date)
   }));
 
   return (
@@ -63,7 +64,7 @@ export default function PatientData() {
           <CardContent className="pt-6">
             <div className="text-sm font-medium text-gray-500">Peso Atual</div>
             <div className="mt-2 flex items-baseline">
-              <span className="text-3xl font-bold text-gray-900">{latestMeasurement.weight || patientData.weight}</span>
+              <span className="text-3xl font-bold text-gray-900">{formatKgShort(latestMeasurement.weight || patientData.weight)}</span>
               <span className="ml-1 text-gray-600">kg</span>
             </div>
           </CardContent>
@@ -73,8 +74,14 @@ export default function PatientData() {
           <CardContent className="pt-6">
             <div className="text-sm font-medium text-gray-500">Meta de Peso</div>
             <div className="mt-2 flex items-baseline">
-              <span className="text-3xl font-bold text-emerald-600">{patientData.targetWeight || '-'}</span>
-              <span className="ml-1 text-gray-600">kg</span>
+              {patientData.targetWeight ? (
+                <>
+                  <span className="text-3xl font-bold text-emerald-600">{formatKgShort(patientData.targetWeight)}</span>
+                  <span className="ml-1 text-gray-600">kg</span>
+                </>
+              ) : (
+                <span className="text-base text-gray-500">Ainda não definida</span>
+              )}
             </div>
           </CardContent>
         </Card>
