@@ -5,7 +5,7 @@ import { PrivacyCard } from '@/components/privacy-card';
 
 export default function NutritionistProfilePage() {
   return (
-    <div className="w-full h-full flex flex-col p-2 md:p-6 pb-24">
+    <div className="w-full flex flex-col p-2 md:p-6 pb-24">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-800">Meu Perfil Profissional</h1>
         <p className="text-slate-600">Atualize seus dados pessoais e foto de perfil.</p>
