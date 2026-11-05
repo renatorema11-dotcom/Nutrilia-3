@@ -8,6 +8,7 @@ import { useAuth } from './auth-provider';
 import { db } from '@/lib/firebase';
 import { getUserData } from '@/lib/db';
 import { WATER_GOAL_ML, mealsDoneToday, waterToday } from '@/lib/daily-log';
+import { todayMealsOf } from '@/lib/plan-text';
 
 const liters = (ml: number) => `${(ml / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} L`;
 
@@ -26,8 +27,7 @@ export function Achievements() {
     // As refeições do dia são as mesmas que o diário alimentar mostra.
     getUserData(user.uid)
       .then((data) => {
-        const meals = data?.currentPlan?.days?.[0]?.meals;
-        if (active) setPlannedMeals(Array.isArray(meals) ? meals.map((meal: { name: string }) => meal.name) : []);
+        if (active) setPlannedMeals(todayMealsOf(data).map((meal) => meal.name));
       })
       .catch((error) => {
         console.error(error);

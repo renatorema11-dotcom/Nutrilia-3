@@ -52,7 +52,7 @@ export function DailyNutritionTip({ objective }: { objective: string }) {
         {isLoading ? (
           <div className="flex items-center gap-2 text-amber-600/80 text-sm">
             <Loader2 className="w-4 h-4 animate-spin" />
-            Curando dica para {objective}...
+            Preparando a sua dica de hoje...
           </div>
         ) : !tip ? (
           <p role="status" className="text-amber-800/80 text-sm">

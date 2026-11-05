@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Target, TrendingDown, TrendingUp } from 'lucide-react';
 import { motion } from 'motion/react';
+import { formatKg, formatKgShort } from '@/lib/format';
 
 interface WeightProgressProps {
   initialWeight: number;
@@ -27,7 +28,7 @@ export function WeightProgress({ initialWeight, currentWeight, targetWeight }: W
         </CardHeader>
         <CardContent>
           <p className="text-3xl font-bold text-slate-800">
-            {current.toFixed(1)} <span className="text-sm font-normal text-slate-500">kg</span>
+            {formatKg(current)} <span className="text-sm font-normal text-slate-500">kg</span>
           </p>
           <p className="text-sm text-slate-500 mt-2">
             Você ainda não tem uma meta de peso. Defina a sua em Configurações ou combine com a sua nutricionista.
@@ -68,7 +69,7 @@ export function WeightProgress({ initialWeight, currentWeight, targetWeight }: W
           <div className="flex justify-between items-end">
             <div>
               <p className="text-3xl font-bold text-slate-800">
-                {current.toFixed(1)} <span className="text-sm font-normal text-slate-500">kg</span>
+                {formatKg(current)} <span className="text-sm font-normal text-slate-500">kg</span>
               </p>
               <p className="text-sm text-slate-500 flex items-center mt-1">
                 {isLosingWeight ? (
@@ -76,18 +77,18 @@ export function WeightProgress({ initialWeight, currentWeight, targetWeight }: W
                 ) : (
                   <TrendingUp className="w-4 h-4 mr-1 text-emerald-500" />
                 )}
-                Faltam {remaining.toFixed(1)} kg para a meta
+                {remaining > 0 ? `Faltam ${formatKg(remaining)} kg para a meta` : 'Meta alcançada!'}
               </p>
             </div>
             <div className="text-right">
               <p className="text-sm font-medium text-indigo-600">Alvo</p>
-              <p className="text-xl font-semibold text-slate-800">{target.toFixed(1)} kg</p>
+              <p className="text-xl font-semibold text-slate-800">{formatKg(target)} kg</p>
             </div>
           </div>
 
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-500 font-medium">
-              <span>{initial} kg</span>
+              <span>{formatKgShort(initial)} kg</span>
               <span>{Math.round(percentage)}%</span>
             </div>
             <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden relative">

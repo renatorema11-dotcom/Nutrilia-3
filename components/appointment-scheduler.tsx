@@ -10,6 +10,7 @@ import { getUserData, updateUserData } from '@/lib/db';
 import { ApiError, authFetch, postJson } from '@/lib/api-client';
 import { getPatients, type Patient } from '@/lib/patients';
 import { AliAppointmentRequests } from './ali-appointment-requests';
+import { localDayKey } from '@/lib/format';
 
 export type Appointment = {
   id: string;
@@ -125,6 +126,10 @@ export function AppointmentScheduler({
     e.preventDefault();
     if (!newDate || !newTime || saving) return;
     setFormError('');
+    if (new Date(`${newDate}T${newTime}`).getTime() <= Date.now()) {
+      setFormError('Escolha uma data e um horário que ainda não passaram.');
+      return;
+    }
 
     if (!user) {
       // Sem login (modo de demonstração), a consulta fica só neste navegador.
@@ -314,7 +319,7 @@ END:VCALENDAR`;
                   type="date" 
                   value={newDate}
                   onChange={(e) => setNewDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={localDayKey()}
                   required
                   className="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
                 />

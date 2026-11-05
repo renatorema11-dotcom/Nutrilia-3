@@ -135,6 +135,7 @@ export function PatientSettings({
               <Input
                 id="weight"
                 type="number"
+                step="any"
                 label="Peso Atual (kg)"
                 required
                 value={formData.weight}
@@ -147,6 +148,7 @@ export function PatientSettings({
               <Input
                 id="initialWeight"
                 type="number"
+                step="any"
                 label="Peso Inicial (kg)"
                 value={formData.initialWeight}
                 onChange={handleChange}
@@ -156,6 +158,7 @@ export function PatientSettings({
               <Input
                 id="targetWeight"
                 type="number"
+                step="any"
                 label="Meta de Peso (kg)"
                 value={formData.targetWeight}
                 onChange={handleChange}

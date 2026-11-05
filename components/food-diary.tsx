@@ -11,6 +11,8 @@ import { ApiError, postJson } from '@/lib/api-client';
 import { photoDataUrl } from '@/lib/photo';
 import { AliFoodLogs } from './ali-food-logs';
 import { PremiumButton, usePremium } from './premium';
+import { dailyKey, isSameDay } from '@/lib/daily-log';
+import { todayMealsOf } from '@/lib/plan-text';
 
 type MealStatus = 'followed' | 'different' | 'skipped' | null;
 
@@ -39,7 +41,7 @@ export function FoodDiary() {
   const premium = usePremium();
 
   // Using active plan or fallback meals for the diary
-  const [todayMeals, setTodayMeals] = useState<{ name: string; time: string; items: string[] }[]>([]);
+  const [todayMeals, setTodayMeals] = useState<{ name: string; time?: string; items: string[] }[]>([]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -47,13 +49,12 @@ export function FoodDiary() {
       if (user) {
         const data = await getUserData(user.uid);
         setObjective(typeof data?.patientData?.objective === 'string' ? data.patientData.objective : '');
-        if (data?.currentPlan?.days?.[0]?.meals) {
-          setHasPlan(true);
-          setTodayMeals(data.currentPlan.days[0].meals);
-        } else if (data?.savedPlans && data.savedPlans.length > 0) {
-          setHasPlan(true);
-        }
-        if (data?.foodDiary?.date === new Date().toLocaleDateString()) {
+        // As refeições de hoje: as do plano aprovado (grupo de dias de hoje) ou as do último cardápio salvo.
+        const meals = todayMealsOf(data);
+        setHasPlan(meals.length > 0);
+        setTodayMeals(meals);
+        const now = new Date();
+        if (data?.foodDiary && isSameDay(data.foodDiary.date, now, now.toLocaleDateString())) {
           setEntries(data.foodDiary.entries || {});
         }
       } else {
@@ -91,7 +92,7 @@ export function FoodDiary() {
       await updateUserData(user.uid, {
         foodDiary: {
           entries: newEntries,
-          date: new Date().toLocaleDateString()
+          date: dailyKey()
         }
       });
     } else {
@@ -166,7 +167,7 @@ export function FoodDiary() {
         await updateUserData(user.uid, {
           foodDiary: {
             entries: updatedEntries,
-            date: new Date().toLocaleDateString()
+            date: dailyKey()
           }
         });
       } else {
@@ -230,9 +231,11 @@ export function FoodDiary() {
                 <div>
                   <h4 className="font-semibold text-slate-800 flex items-center text-sm">
                     {meal.name}
-                    <span className="text-xs font-normal text-slate-500 ml-2 bg-slate-100 px-2 py-0.5 rounded-full">
-                      {meal.time}
-                    </span>
+                    {meal.time && (
+                      <span className="text-xs font-normal text-slate-500 ml-2 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {meal.time}
+                      </span>
+                    )}
                   </h4>
                   <p className="text-xs text-slate-600 mt-1 line-clamp-1" title={meal.items.join(', ')}>
                     {meal.items.join(', ')}
