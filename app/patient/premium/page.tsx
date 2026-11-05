@@ -42,7 +42,10 @@ export default function PremiumPage() {
   };
 
   const cancel = async () => {
-    if (!window.confirm(`Cancelar a assinatura? O Premium continua até ${dateLabel(until) || 'o fim do mês pago'}.`)) return;
+    const question = active
+      ? `Cancelar a assinatura? O Premium continua até ${dateLabel(until) || 'o fim do mês pago'}.`
+      : 'Cancelar a assinatura? Nada mais será cobrado.';
+    if (!window.confirm(question)) return;
     setMessage('');
     setBusy('cancelar');
     try {
@@ -111,7 +114,7 @@ export default function PremiumPage() {
             </div>
           )}
 
-          {active && subscribed && (
+          {subscribed && (
             <Button variant="outline" onClick={cancel} disabled={!!busy} className="w-full sm:w-auto">
               {busy === 'cancelar' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Cancelar a assinatura
