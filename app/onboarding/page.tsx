@@ -158,11 +158,12 @@ export default function PatientOnboarding() {
                     <Input
                       id="weight"
                       type="number"
+                      step="any"
                       label="Peso (kg)"
                       required
                       value={formData.weight}
                       onChange={handleChange}
-                      placeholder="Ex: 75.5"
+                      placeholder="Ex: 75,5"
                     />
                     {errors.weight && <p className="text-xs text-red-500 font-medium">{errors.weight}</p>}
                   </motion.div>
