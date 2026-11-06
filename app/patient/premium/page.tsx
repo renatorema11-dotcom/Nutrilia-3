@@ -109,7 +109,7 @@ export default function PremiumPage() {
               </Button>
               <p className="text-xs text-slate-500 flex items-start gap-1.5">
                 <ShieldCheck className="w-4 h-4 shrink-0" />
-                O pagamento é feito no site seguro do Asaas, por Pix, cartão ou boleto. O CPF vai só para o Asaas, para a cobrança. O Premium liga assim que o pagamento é confirmado (no Pix, na hora).
+                O pagamento é feito no site seguro do Asaas, por Pix, cartão ou boleto. O CPF vai só para o Asaas, para a cobrança. O Premium liga assim que o pagamento é confirmado (no Pix, na hora). Nada é cobrado sem você abrir a fatura e pagar, e a Ali não faz pagamentos.
               </p>
             </div>
           )}
