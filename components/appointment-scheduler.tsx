@@ -260,7 +260,7 @@ END:VCALENDAR`;
 
   return (
     <Card className="w-full h-full flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-slate-100">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
         <CardTitle className="flex items-center text-lg">
           <CalendarIcon className="w-5 h-5 mr-2 text-teal-600" />
           Agendamento de Consultas
@@ -268,7 +268,7 @@ END:VCALENDAR`;
         <Button 
           variant="outline" 
           onClick={() => setIsFormOpen(!isFormOpen)}
-          className="h-8 text-xs flex items-center gap-1"
+          className="h-8 text-xs flex items-center gap-1 shrink-0"
         >
           {isFormOpen ? 'Fechar' : <><Plus className="w-3 h-3" /> Nova Consulta</>}
         </Button>

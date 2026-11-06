@@ -76,6 +76,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             const data = userSnap.data();
+            // Conta antiga criada por e-mail: o nome só estava no cadastro do app.
+            if (!currentUser.displayName && typeof data.displayName === 'string' && data.displayName.trim()) {
+              await updateProfile(currentUser, { displayName: data.displayName.trim() }).catch((err) => console.warn('Nome da conta não atualizado:', err));
+            }
             setMustChangePassword(!!data.mustChangePassword);
             setApproval(approvalFrom(data));
             if (data.role) {
@@ -189,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerWithEmail = async (email: string, password: string, name: string, role: UserRole, extraData?: any) => {
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(result.user, { displayName: name });
       const userRef = doc(db, 'users', result.user.uid);
       const now = new Date().toISOString();
       // Nutricionista nova entra "em análise" (as regras do banco só aceitam assim); o responsável aprova depois.

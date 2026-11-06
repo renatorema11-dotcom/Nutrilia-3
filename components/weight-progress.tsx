@@ -66,9 +66,9 @@ export function WeightProgress({ initialWeight, currentWeight, targetWeight }: W
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="flex justify-between items-end">
+          <div className="flex flex-wrap justify-between items-end gap-3">
             <div>
-              <p className="text-3xl font-bold text-slate-800">
+              <p className="text-3xl font-bold text-slate-800 whitespace-nowrap">
                 {formatKg(current)} <span className="text-sm font-normal text-slate-500">kg</span>
               </p>
               <p className="text-sm text-slate-500 flex items-center mt-1">
@@ -82,7 +82,7 @@ export function WeightProgress({ initialWeight, currentWeight, targetWeight }: W
             </div>
             <div className="text-right">
               <p className="text-sm font-medium text-indigo-600">Alvo</p>
-              <p className="text-xl font-semibold text-slate-800">{formatKg(target)} kg</p>
+              <p className="text-xl font-semibold text-slate-800 whitespace-nowrap">{formatKg(target)} kg</p>
             </div>
           </div>
 
