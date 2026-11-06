@@ -100,7 +100,7 @@ export default function PrivacyPage() {
         <Section title="8. Segurança">
           <p>
             O acesso é protegido por login, as regras do banco de dados só liberam os dados para você e para a sua nutricionista, as conexões são criptografadas e as
-            chaves de acesso aos serviços ficam só no servidor. Os avisos por e-mail não levam o conteúdo das mensagens nem dados de saúde.
+            chaves de acesso aos serviços ficam só no servidor. Os avisos por e-mail não levam o conteúdo das mensagens nem dados de saúde. Os dados ficam nos servidores do Google (Firebase), guardados de forma criptografada, com cópia de segurança diária e recuperação dos últimos 7 dias. As autorizações do Google da nutricionista são guardadas criptografadas.
           </p>
         </Section>
 
