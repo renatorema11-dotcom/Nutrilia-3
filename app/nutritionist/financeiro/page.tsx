@@ -93,7 +93,7 @@ export default function FinancePage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Wallet className="w-6 h-6 text-teal-600" /> Financeiro</h1>
         <p className="text-slate-600 mt-1">
-          Receba as consultas pelo app. Você não paga mensalidade: o NutriAli fica com 10% de cada pagamento e o resto vai direto para a sua conta no Asaas.
+          Receba as consultas pelo app. Você não paga mensalidade: o NutriAli fica com 10% de cada pagamento e o resto vai direto para a sua conta no Asaas. Exemplo: numa consulta de R$ 150, a taxa do Asaas sai primeiro e, do restante, cerca de R$ 15 ficam com o NutriAli.
         </p>
       </div>
 
