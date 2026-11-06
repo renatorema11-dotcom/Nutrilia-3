@@ -113,18 +113,18 @@ export default function PatientDashboard() {
   const renderOverview = () => (
     <>
       {/* Top Row: Key Metrics & Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <div className="lg:col-span-1 h-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
+        <div className="xl:col-span-1 h-full">
           <WeightProgress
             initialWeight={patientData.initialWeight || patientData.weight}
             currentWeight={patientData.weight}
             targetWeight={patientData.targetWeight}
           />
         </div>
-        <div className="lg:col-span-2 h-full">
+        <div className="xl:col-span-2 h-full">
           <DailyNutritionTip objective={patientData.objective} />
         </div>
-        <div className="lg:col-span-1 h-full">
+        <div className="md:col-span-2 xl:col-span-1 h-full">
           <Card className="tour-chat h-full">
             <CardContent className="pt-6 h-full flex flex-col justify-center">
               <div className="flex flex-col items-center text-center space-y-4">
