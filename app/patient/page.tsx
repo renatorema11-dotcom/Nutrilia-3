@@ -113,7 +113,7 @@ export default function PatientDashboard() {
   const renderOverview = () => (
     <>
       {/* Top Row: Key Metrics & Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
         <div className="xl:col-span-1 h-full">
           <WeightProgress
             initialWeight={patientData.initialWeight || patientData.weight}
@@ -121,7 +121,7 @@ export default function PatientDashboard() {
             targetWeight={patientData.targetWeight}
           />
         </div>
-        <div className="xl:col-span-2 h-full">
+        <div className="h-full">
           <DailyNutritionTip objective={patientData.objective} />
         </div>
         <div className="md:col-span-2 xl:col-span-1 h-full">
@@ -157,6 +157,9 @@ export default function PatientDashboard() {
           <CardContent>
             <p className="text-slate-600 mb-4 text-sm">
               Que tal fugir da rotina? Peça para nossa Inteligência Artificial criar um cardápio diário inovador, totalmente focado no seu objetivo de <strong>{patientData.objective}</strong>!
+            </p>
+            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              É uma sugestão de ideias feita pela IA, sem a avaliação da sua nutricionista. Se você tem alguma condição de saúde, alergia ou restrição, fale com ela antes de seguir.
             </p>
             
             {!creativePlan && !isGenerating && (
