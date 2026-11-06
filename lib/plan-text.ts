@@ -102,6 +102,10 @@ export function mealsFromPlanText(text: unknown): PlanMeal[] {
   for (const raw of planTextToMarkdown(text).split('\n')) {
     const line = raw.trim();
     if (!line || /^-{3,}$/.test(line)) continue;
+    if (/^\W*total\b/i.test(line)) {
+      current = null;
+      continue;
+    }
     const heading = mealHeading(line);
     if (heading) {
       current = { id: `meal_${meals.length}`, name: heading.name, time: heading.time, items: heading.rest ? [clean(heading.rest)] : [] };
