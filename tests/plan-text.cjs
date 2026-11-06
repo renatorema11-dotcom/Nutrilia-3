@@ -51,6 +51,7 @@ check('só refeição conta como refeição: título do plano e dicas ficam de f
   assert.deepEqual(meals.map((meal) => meal.time), ['07:30', '12:30']);
   assert.ok(meals[0].items.includes('1 banana congelada'));
   assert.ok(!JSON.stringify(meals).includes('**'));
+  assert.ok(!JSON.stringify(meals).includes('Total diário'));
 });
 
 check('refeições em títulos, em negrito e em linha com dois-pontos', () => {
