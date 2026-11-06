@@ -183,7 +183,7 @@ function AgentInner({
           <span translate="no">Ali</span> — Assistente de Voz
         </h3>
         <p className="text-sm text-slate-600">
-          Converse com a Ali: registre seu peso, anote refeições e peça consultas
+          Converse com a Ali: registre seu peso, anote refeições e peça consultas. A Ali não faz pagamentos.
         </p>
       </div>
 
