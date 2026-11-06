@@ -1,54 +1,44 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/components/auth-provider';
+import { PremiumLock, usePremium } from '@/components/premium';
 import { getUserData } from '@/lib/db';
+import { formatDayKey, formatKgShort } from '@/lib/format';
 
 export default function PatientData() {
   const { user } = useAuth();
+  // Os números do dia são de todos; o gráfico da evolução é do Premium.
+  const premium = usePremium();
   const [patientData, setPatientData] = useState<any>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     async function loadData() {
-      if (user) {
-        const data = await getUserData(user.uid);
-        if (data?.patientData) {
-          setPatientData(data.patientData);
-          return;
-        }
-      }
-
-      const saved = localStorage.getItem('mockPatientData');
-      if (saved) {
-        try {
-          setPatientData(JSON.parse(saved));
-          return;
-        } catch {
-          // fallback
-        }
-      }
-
-      // Default user data when no custom values are saved yet
-      setPatientData({
-        name: user?.displayName || 'Paciente',
-        weight: 70,
-        height: 168,
-        targetWeight: 65,
-        initialWeight: 75,
-        objective: 'Saúde e Bem-Estar',
-        measurements: [
-          { date: new Date().toISOString().split('T')[0], weight: 70, height: 168 }
-        ]
-      });
+      if (!user) return;
+      // Só o que está no prontuário: sem valores de exemplo.
+      const data = await getUserData(user.uid);
+      setPatientData(data?.patientData?.weight ? data.patientData : null);
+      setLoaded(true);
     }
 
     loadData();
   }, [user]);
 
-  if (!patientData) {
+  if (!loaded) {
     return <div className="p-8 text-center text-slate-500">Carregando dados...</div>;
+  }
+
+  if (!patientData) {
+    return (
+      <div className="p-8 text-center space-y-3">
+        <p className="text-slate-600">Seus dados ainda não foram informados.</p>
+        <Link href="/onboarding" className="inline-block text-sm font-semibold text-teal-700 underline">Concluir a triagem</Link>
+      </div>
+    );
   }
 
   const measurements = patientData.measurements && patientData.measurements.length > 0
@@ -59,7 +49,7 @@ export default function PatientData() {
 
   const chartData = measurements.map((m: any) => ({
     ...m,
-    dateFormatted: m.date
+    dateFormatted: formatDayKey(m.date)
   }));
 
   return (
@@ -74,7 +64,7 @@ export default function PatientData() {
           <CardContent className="pt-6">
             <div className="text-sm font-medium text-gray-500">Peso Atual</div>
             <div className="mt-2 flex items-baseline">
-              <span className="text-3xl font-bold text-gray-900">{latestMeasurement.weight || patientData.weight}</span>
+              <span className="text-3xl font-bold text-gray-900">{formatKgShort(latestMeasurement.weight || patientData.weight)}</span>
               <span className="ml-1 text-gray-600">kg</span>
             </div>
           </CardContent>
@@ -84,8 +74,14 @@ export default function PatientData() {
           <CardContent className="pt-6">
             <div className="text-sm font-medium text-gray-500">Meta de Peso</div>
             <div className="mt-2 flex items-baseline">
-              <span className="text-3xl font-bold text-emerald-600">{patientData.targetWeight || '-'}</span>
-              <span className="ml-1 text-gray-600">kg</span>
+              {patientData.targetWeight ? (
+                <>
+                  <span className="text-3xl font-bold text-emerald-600">{formatKgShort(patientData.targetWeight)}</span>
+                  <span className="ml-1 text-gray-600">kg</span>
+                </>
+              ) : (
+                <span className="text-base text-gray-500">Ainda não definida</span>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -101,6 +97,7 @@ export default function PatientData() {
         </Card>
       </div>
 
+      {premium.active ? (
       <Card>
         <CardHeader>
           <CardTitle>Evolução de Peso</CardTitle>
@@ -121,6 +118,7 @@ export default function PatientData() {
           </div>
         </CardContent>
       </Card>
+      ) : !premium.loading && <PremiumLock feature="charts" />}
     </div>
   );
 }

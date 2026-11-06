@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from './auth-provider';
-import { getUserData, updateUserData } from '@/lib/db';
+import { getUserData } from '@/lib/db';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { Activity } from 'lucide-react';
@@ -22,64 +22,32 @@ export function EvolutionChart() {
 
   useEffect(() => {
     async function loadData() {
-      if (user) {
-        const dbData = await getUserData(user.uid);
-        if (dbData?.patientData) {
-          const currentWeight = parseFloat(dbData.patientData.weight);
-          if (dbData.patientHistory) {
-            setData(dbData.patientHistory);
-          } else {
-            const mockHistory = [
-              { month: 'Jan', weight: currentWeight + 3.2, fat: 24.5 },
-              { month: 'Fev', weight: currentWeight + 2.1, fat: 23.2 },
-              { month: 'Mar', weight: currentWeight + 0.8, fat: 22.0 },
-              { month: 'Abr', weight: currentWeight, fat: 21.1 },
-            ];
-            await updateUserData(user.uid, { patientHistory: mockHistory });
-            setData(mockHistory);
-          }
-        }
-      } else {
-        const savedData = localStorage.getItem('mockPatientData');
-        if (savedData) {
-          try {
-            const patient = JSON.parse(savedData);
-            const currentWeight = parseFloat(patient.weight) || 70;
-            
-            const savedHistory = localStorage.getItem('mockPatientHistory');
-            if (savedHistory) {
-              try {
-                setData(JSON.parse(savedHistory));
-              } catch {
-                setData([]);
-              }
-            } else {
-              const mockHistory = [
-                { month: 'Jan', weight: currentWeight + 3.2, fat: 24.5 },
-                { month: 'Fev', weight: currentWeight + 2.1, fat: 23.2 },
-                { month: 'Mar', weight: currentWeight + 0.8, fat: 22.0 },
-                { month: 'Abr', weight: currentWeight, fat: 21.1 },
-              ];
-              localStorage.setItem('mockPatientHistory', JSON.stringify(mockHistory));
-              setData(mockHistory);
-            }
-          } catch (e) {
-            console.error('Error parsing patient data or history:', e);
-          }
-        }
-      }
+      if (!user) return;
+      // Só medições de verdade, vindas do prontuário: nada de histórico de exemplo.
+      const dbData = await getUserData(user.uid);
+      const measurements = Array.isArray(dbData?.patientData?.measurements) ? dbData.patientData.measurements : [];
+      setData(measurements
+        .filter((m: any) => m && typeof m.weight === 'number' && typeof m.date === 'string')
+        .map((m: any) => ({
+          month: m.date.split('-').reverse().slice(0, 2).join('/'),
+          weight: m.weight,
+          fat: typeof m.bodyFat === 'number' ? m.bodyFat : undefined,
+        })));
     }
     loadData();
   }, [user]);
 
-  if (data.length === 0) return null;
+  // Com menos de duas medições ainda não existe evolução para mostrar.
+  if (data.length < 2) return null;
+  // A linha de gordura só aparece se a nutricionista registrou esse dado.
+  const hasFat = data.some((point) => typeof point.fat === 'number');
 
   return (
     <Card className="w-full h-full flex flex-col">
       <CardHeader>
         <CardTitle className="flex items-center text-slate-800">
           <Activity className="w-5 h-5 mr-2 text-teal-600" />
-          Evolução de Peso e Gordura
+          {hasFat ? 'Evolução de Peso e Gordura' : 'Evolução de Peso'}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1">
@@ -89,14 +57,14 @@ export function EvolutionChart() {
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} />
               <YAxis yAxisId="left" orientation="left" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} domain={['auto', 'auto']} />
-              <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} domain={['auto', 'auto']} />
+              {hasFat && <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} domain={['auto', 'auto']} />}
               <Tooltip
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                 itemStyle={{ fontWeight: 'bold' }}
               />
               <Legend verticalAlign="top" height={36} iconType="circle" />
               <Line yAxisId="left" type="monotone" name="Peso (kg)" dataKey="weight" stroke="#0d9488" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-              <Line yAxisId="right" type="monotone" name="Gordura (%)" dataKey="fat" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+              {hasFat && <Line yAxisId="right" type="monotone" name="Gordura (%)" dataKey="fat" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls />}
             </LineChart>
           </ResponsiveContainer>
         </div>

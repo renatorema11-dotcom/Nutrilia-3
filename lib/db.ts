@@ -6,7 +6,14 @@ export async function getUserData(uid: string) {
   const userRef = doc(db, 'users', uid);
   const snap = await getDoc(userRef);
   if (snap.exists()) {
-    return snap.data();
+    const profile = snap.data();
+    if (profile.role !== 'patient') return profile;
+    // O prontuário é a fonte comum das telas e das ações autenticadas da Ali.
+    const patientSnap = await getDoc(doc(db, 'patients', uid));
+    if (!patientSnap.exists()) return profile;
+    const patient = patientSnap.data();
+    const approvedPlan = patient.currentPlan?.status === 'approved' ? patient.currentPlan : null;
+    return { ...profile, patientData: { ...patient, currentPlan: approvedPlan }, currentPlan: approvedPlan };
   }
   return null;
 }

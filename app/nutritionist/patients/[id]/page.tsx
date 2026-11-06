@@ -6,11 +6,17 @@ import { ArrowLeft, Clock, Wand2, CheckCircle2, Plus, Loader2, Trash2, MessageSq
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { getPatientById, updatePatient, deletePatient, Patient, Plan } from '@/lib/patients';
+import { ApiError, postJson } from '@/lib/api-client';
+import { AliFoodLogs } from '@/components/ali-food-logs';
+import { ConsultationNotes } from '@/components/consultation-notes';
+import { PlanDayTotals, PlanMealTotals } from '@/components/plan-nutrition';
+import { ExcelDownloadButton } from '@/components/excel-download';
+import { formatDayKey, formatKgShort, localDayKey } from '@/lib/format';
 
-export default function PatientProfile({ params }: { params?: { id: string } }) {
+export default function PatientProfile() {
   const routeParams = useParams();
   const router = useRouter();
-  const patientId = (routeParams?.id as string) || params?.id || '';
+  const patientId = (routeParams?.id as string) || '';
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,6 +28,11 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
   const [showAddMeasure, setShowAddMeasure] = useState(false);
   const [newWeight, setNewWeight] = useState('');
   const [newFat, setNewFat] = useState('');
+  // Aviso e erro na própria tela, no lugar da janelinha do navegador.
+  const [notice, setNotice] = useState('');
+  const [planError, setPlanError] = useState('');
+  // Com plano aprovado, gerar outro não tira o atual do paciente: o novo fica ao lado até ser aprovado.
+  const [replacing, setReplacing] = useState(false);
 
   useEffect(() => {
     if (!patientId) {
@@ -72,43 +83,46 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
 
   const handleGeneratePlan = async () => {
     setGenerating(true);
+    setPlanError('');
+    setNotice('');
     try {
       const lastMeasure = patient.measurements?.[patient.measurements.length - 1] || {
         weight: patient.weight,
         height: patient.height
       };
 
-      const res = await fetch('/api/gemini/generate-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientContext: JSON.stringify({
-            nome: patient.name,
-            idade: patient.age,
-            objetivo: patient.objective,
-            pesoAtual: lastMeasure.weight,
-            altura: lastMeasure.height || patient.height,
-          }),
-          instructions
-        })
+      const json = await postJson('/api/gemini/generate-plan', {
+        // O nome do paciente não vai para a IA: ela não precisa dele para montar o rascunho.
+        patientContext: JSON.stringify({
+          idade: patient.age,
+          objetivo: patient.objective,
+          pesoAtual: lastMeasure.weight,
+          altura: lastMeasure.height || patient.height,
+        }),
+        instructions
       });
-      const json = await res.json();
       if (json.data) {
         const generatedDraft: Plan = {
           id: 'plan_' + Date.now(),
           status: 'draft',
-          createdDate: new Date().toISOString().split('T')[0],
+          createdDate: localDayKey(),
           days: json.data.days
         };
-        setDraftPlan(generatedDraft);
-        await updatePatient(patient.id, { currentPlan: generatedDraft });
-        setPatient({ ...patient, currentPlan: generatedDraft });
+        if (patient.currentPlan?.status === 'approved') {
+          await updatePatient(patient.id, { pendingPlan: generatedDraft });
+          setPatient({ ...patient, pendingPlan: generatedDraft });
+          setReplacing(false);
+        } else {
+          setDraftPlan(generatedDraft);
+          await updatePatient(patient.id, { currentPlan: generatedDraft });
+          setPatient({ ...patient, currentPlan: generatedDraft });
+        }
       } else {
-        alert('Não foi possível gerar o plano. Tente novamente.');
+        setPlanError('Não foi possível gerar o plano. Tente novamente.');
       }
     } catch (e) {
       console.error(e);
-      alert('Erro ao gerar plano.');
+      setPlanError(e instanceof ApiError ? e.message : 'Não foi possível gerar o plano. Tente novamente.');
     } finally {
       setGenerating(false);
     }
@@ -120,13 +134,15 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
       ...draftPlan,
       status: 'approved'
     };
-    await updatePatient(patient.id, { currentPlan: approvedPlan });
+    // A hora da aprovação dispara o aviso por e-mail ao paciente (plano novo no app).
+    await updatePatient(patient.id, { currentPlan: approvedPlan, planApprovedAt: new Date().toISOString() });
     setPatient({ ...patient, currentPlan: approvedPlan });
     setDraftPlan(null);
-    alert('Plano aprovado com sucesso! Liberado para o paciente.');
+    setNotice('Plano aprovado e liberado para o paciente.');
   };
 
   const handleDiscardPlan = async () => {
+    if (!window.confirm('Descartar este rascunho?')) return;
     await updatePatient(patient.id, { currentPlan: null });
     setPatient({ ...patient, currentPlan: null });
     setDraftPlan(null);
@@ -136,7 +152,7 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
     e.preventDefault();
     if (!newWeight || Number(newWeight) <= 0) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDayKey();
     const newM = {
       date: today,
       weight: Number(newWeight),
@@ -161,6 +177,21 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
     setShowAddMeasure(false);
   };
 
+  // Rascunho novo feito pela Ali ao lado de um plano aprovado: aprovar troca o plano do paciente; o anterior vai para o histórico.
+  const handleApprovePending = async () => {
+    if (!patient.pendingPlan) return;
+    const approved: Plan = { ...patient.pendingPlan, status: 'approved' };
+    const pastPlans = patient.currentPlan ? [...(patient.pastPlans || []), patient.currentPlan] : (patient.pastPlans || []);
+    await updatePatient(patient.id, { currentPlan: approved, pendingPlan: null, pastPlans, planApprovedAt: new Date().toISOString() });
+    setPatient({ ...patient, currentPlan: approved, pendingPlan: null, pastPlans });
+    setNotice('Plano novo aprovado. Ele substituiu o anterior para o paciente.');
+  };
+
+  const handleDiscardPending = async () => {
+    await updatePatient(patient.id, { pendingPlan: null });
+    setPatient({ ...patient, pendingPlan: null });
+  };
+
   const handleDeletePatient = async () => {
     if (window.confirm(`Tem certeza que deseja remover ${patient.name}?`)) {
       await deletePatient(patient.id);
@@ -170,6 +201,25 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
 
   const planStatus = patient.currentPlan?.status || (draftPlan ? 'draft' : 'none');
   const currentPlan = patient.currentPlan || draftPlan;
+
+  // Planilhas do Excel (evolução do peso e plano alimentar), montadas aqui mesmo no navegador.
+  const sheetDay = async () => {
+    const specs = await import('@/lib/sheet-specs');
+    return { specs, today: specs.sheetDateKey(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo') };
+  };
+  const buildWeightSheet = async () => {
+    const { specs, today } = await sheetDay();
+    return specs.weightSheet(patient.name, specs.weightEntriesOf(patient as unknown as Record<string, unknown>), patient.targetWeight ?? null, today);
+  };
+  const buildPlanSheet = (plan: Plan | null | undefined, draft: boolean) => async () => {
+    const { specs, today } = await sheetDay();
+    return specs.planSheet(patient.name, specs.sheetPlanDaysOf(plan), draft, today);
+  };
+  // Rascunho pedido à Ali: ela monta em segundo plano (cerca de um minuto); a página avisa enquanto isso.
+  const job = patient.planDraftJob;
+  const jobAge = job ? Date.now() - Date.parse(job.startedAt) : Infinity;
+  const jobRunning = job?.status === 'running' && jobAge < 3 * 60_000;
+  const jobFailed = !!job && (job.status === 'failed' || (job.status === 'running' && !jobRunning)) && jobAge < 86_400_000 && !patient.pendingPlan && planStatus !== 'draft';
 
   return (
     <div className="space-y-6">
@@ -181,7 +231,9 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{patient.name}</h1>
-            <p className="text-gray-600">{patient.email} • {patient.age} anos • Objetivo: {patient.objective}</p>
+            <p className="text-gray-600">
+              {[patient.email, patient.age ? `${patient.age} anos` : 'triagem pendente', patient.objective ? `Objetivo: ${patient.objective}` : ''].filter(Boolean).join(' • ')}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             {planStatus === 'approved' && <Badge variant="success">Plano Ativo</Badge>}
@@ -204,19 +256,26 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
         </div>
       </div>
 
+      <AliFoodLogs patientUid={patient.id} />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-6">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
               <CardTitle>Histórico de Medidas</CardTitle>
-              <Button
-                variant="outline"
-                onClick={() => setShowAddMeasure(!showAddMeasure)}
-                className="text-xs h-8 px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                Nova Medida
-              </Button>
+              <div className="flex items-center gap-2">
+                {patient.measurements && patient.measurements.length > 0 && (
+                  <ExcelDownloadButton build={buildWeightSheet} label="Excel" className="text-xs h-8 px-2" />
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAddMeasure(!showAddMeasure)}
+                  className="text-xs h-8 px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Nova Medida
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {showAddMeasure && (
@@ -228,7 +287,7 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
                       <Input
                         type="number"
                         step="0.1"
-                        placeholder="Ex: 71.2"
+                        placeholder="Ex: 71,2"
                         value={newWeight}
                         onChange={(e) => setNewWeight(e.target.value)}
                         required
@@ -240,7 +299,7 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
                       <Input
                         type="number"
                         step="0.1"
-                        placeholder="Ex: 19.5"
+                        placeholder="Ex: 19,5"
                         value={newFat}
                         onChange={(e) => setNewFat(e.target.value)}
                         className="h-8 text-xs"
@@ -263,11 +322,11 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
                   {[...patient.measurements].reverse().map((m, idx) => (
                     <div key={idx} className="pt-2 first:pt-0 flex justify-between text-sm">
                       <div>
-                        <p className="font-semibold text-slate-800">{m.weight} kg</p>
-                        <p className="text-xs text-slate-400">{m.date}</p>
+                        <p className="font-semibold text-slate-800">{formatKgShort(m.weight)} kg</p>
+                        <p className="text-xs text-slate-400">{formatDayKey(m.date)}{m.source === 'patient' ? ' • informado pelo paciente' : ''}</p>
                       </div>
                       <div className="text-right">
-                        {m.bodyFat && <p className="text-xs text-slate-600">{m.bodyFat}% gordura</p>}
+                        {m.bodyFat && <p className="text-xs text-slate-600">{formatKgShort(m.bodyFat)}% gordura</p>}
                         {m.height && <p className="text-xs text-slate-400">{m.height} cm</p>}
                       </div>
                     </div>
@@ -278,22 +337,84 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
               )}
             </CardContent>
           </Card>
+          <ConsultationNotes patientId={patient.id} />
         </div>
 
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle>Plano Alimentar</CardTitle>
+              {currentPlan?.days?.length ? (
+                <ExcelDownloadButton build={buildPlanSheet(currentPlan, currentPlan.status !== 'approved')} className="text-xs h-8 px-2" />
+              ) : null}
             </CardHeader>
             <CardContent>
-              {planStatus === 'none' && (
-                <div className="bg-emerald-50 rounded-lg p-6 border border-emerald-100 space-y-4">
+              {notice && (
+                <div role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {notice}
+                </div>
+              )}
+              {jobRunning && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm text-teal-800">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  A Ali está montando um rascunho de plano. Recarregue a página em um minuto.
+                </div>
+              )}
+              {jobFailed && (
+                <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  A Ali não conseguiu montar o último rascunho pedido{job?.reason ? `: ${job.reason}` : '.'} Peça de novo para a Ali ou gere o rascunho aqui.
+                </div>
+              )}
+              {patient.pendingPlan && (
+                <div className="mb-6 space-y-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                      <h4 className="font-medium text-amber-900">{patient.pendingPlan.source === 'ali' ? 'Novo rascunho montado pela Ali' : 'Novo rascunho do plano'}</h4>
+                      <p className="text-sm text-amber-700">
+                        O plano atual continua valendo para o paciente até você aprovar este.
+                        {patient.pendingPlan.instructions ? ` Orientações: ${patient.pendingPlan.instructions}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                      <ExcelDownloadButton build={buildPlanSheet(patient.pendingPlan, true)} label="Rascunho em Excel" className="text-xs h-9 px-3 bg-white" />
+                      <Button onClick={handleApprovePending} className="bg-amber-600 hover:bg-amber-700 text-white border-0 flex-shrink-0">
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Aprovar e substituir
+                      </Button>
+                    </div>
+                  </div>
+                  {patient.pendingPlan.days?.map((day, idx) => (
+                    <div key={idx} className="space-y-3">
+                      <h4 className="font-bold text-slate-800 border-b border-amber-200 pb-2">{day.name}</h4>
+                      <PlanDayTotals day={day} />
+                      {day.meals?.map((meal, mIdx) => (
+                        <div key={mIdx} className="bg-white p-3 rounded-lg flex gap-4 items-start border border-amber-100">
+                          <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-slate-700 flex items-center shrink-0 border border-slate-200">
+                            <Clock className="h-3.5 w-3.5 mr-1 text-amber-600" /> {meal.time}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-sm text-slate-900">{meal.name}</p>
+                            <p className="text-sm text-slate-600 mt-1">{Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}</p>
+                            <PlanMealTotals meal={meal} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleDiscardPending}>
+                    Descartar rascunho novo
+                  </Button>
+                </div>
+              )}
+              {(planStatus === 'none' || replacing) && (
+                <div className="mb-6 bg-emerald-50 rounded-lg p-6 border border-emerald-100 space-y-4">
                   <h3 className="font-medium text-emerald-900 flex items-center">
                     <Wand2 className="h-5 w-5 mr-2 text-emerald-600" />
                     Gerar Plano Personalizado com IA
                   </h3>
                   <p className="text-sm text-emerald-700">
-                    A Inteligência Artificial criará um plano alimentar sob medida para o objetivo de <strong>{patient.objective}</strong>.
+                    A Inteligência Artificial criará um plano alimentar sob medida para o objetivo de <strong>{patient.objective || 'saúde e bem-estar'}</strong>.
+                    {replacing && ' O plano atual continua valendo para o paciente até você aprovar o novo.'}
                   </p>
                   <Input
                     id="inst"
@@ -305,12 +426,13 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
                     {generating ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Elaborando rascunho com Gemini...
+                        Elaborando rascunho com a IA...
                       </>
                     ) : (
                       'Gerar Rascunho com IA'
                     )}
                   </Button>
+                  {planError && <p role="alert" className="text-sm font-medium text-red-700">{planError}</p>}
                 </div>
               )}
 
@@ -319,22 +441,26 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
                   {currentPlan.days?.map((day: any, idx: number) => (
                     <div key={idx} className="space-y-4">
                       <h4 className="font-bold text-slate-800 border-b pb-2">{day.name}</h4>
+                      <PlanDayTotals day={day} />
                       {day.meals?.map((meal: any, mIdx: number) => (
                         <div key={mIdx} className="bg-slate-50 p-3 rounded-lg flex gap-4 items-start border border-slate-100">
                           <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-slate-700 flex items-center shrink-0 border border-slate-200">
                             <Clock className="h-3.5 w-3.5 mr-1 text-emerald-600" /> {meal.time}
                           </div>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="font-semibold text-sm text-slate-900">{meal.name}</p>
                             <p className="text-sm text-slate-600 mt-1">{Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}</p>
+                            <PlanMealTotals meal={meal} />
                           </div>
                         </div>
                       ))}
                     </div>
                   ))}
-                  <Button variant="outline" className="w-full mt-4 text-slate-700" onClick={handleDiscardPlan}>
-                    Substituir Plano Alimentar
-                  </Button>
+                  {!patient.pendingPlan && (
+                    <Button variant="outline" className="w-full mt-4 text-slate-700" onClick={() => { setReplacing(!replacing); setPlanError(''); }}>
+                      {replacing ? 'Manter o plano atual' : 'Gerar um novo plano'}
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -342,8 +468,11 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
                 <div className="space-y-6">
                   <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                      <h4 className="font-medium text-amber-900">Rascunho do Plano Gerado</h4>
-                      <p className="text-sm text-amber-700">Apenas o nutricionista vê este rascunho. Clique em aprovar para disponibilizar ao paciente.</p>
+                      <h4 className="font-medium text-amber-900">{draftPlan.source === 'ali' ? 'Rascunho do plano montado pela Ali' : 'Rascunho do Plano Gerado'}</h4>
+                      <p className="text-sm text-amber-700">
+                        Apenas o nutricionista vê este rascunho. Clique em aprovar para disponibilizar ao paciente.
+                        {draftPlan.instructions ? ` Orientações: ${draftPlan.instructions}` : ''}
+                      </p>
                     </div>
                     <Button onClick={handleApprovePlan} className="bg-amber-600 hover:bg-amber-700 text-white border-0 flex-shrink-0">
                       <CheckCircle2 className="w-4 h-4 mr-2" />
@@ -354,14 +483,16 @@ export default function PatientProfile({ params }: { params?: { id: string } }) 
                   {draftPlan.days?.map((day: any, idx: number) => (
                     <div key={idx} className="space-y-4">
                       <h4 className="font-bold text-slate-800 border-b pb-2">{day.name}</h4>
+                      <PlanDayTotals day={day} />
                       {day.meals?.map((meal: any, mIdx: number) => (
                         <div key={mIdx} className="bg-slate-50 p-3 rounded-lg flex gap-4 items-start border border-slate-100">
                           <div className="bg-white px-2 py-1 rounded shadow-sm text-xs font-bold text-slate-700 flex items-center shrink-0 border border-slate-200">
                             <Clock className="h-3.5 w-3.5 mr-1 text-amber-600" /> {meal.time}
                           </div>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="font-semibold text-sm text-slate-900">{meal.name}</p>
                             <p className="text-sm text-slate-600 mt-1">{Array.isArray(meal.items) ? meal.items.join(', ') : meal.items}</p>
+                            <PlanMealTotals meal={meal} />
                           </div>
                         </div>
                       ))}

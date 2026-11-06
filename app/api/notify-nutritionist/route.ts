@@ -1,54 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, doc, setDoc } from 'firebase/firestore';
+import { getAdminDb, json, verifyCaller } from '@/lib/firebase-admin';
+import { notifyNewPatient } from '@/lib/google-workspace';
 
-export async function POST(req: NextRequest) {
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+/**
+ * Chamada quando o paciente escolhe uma nutricionista. Quem é a nutricionista vem do prontuário, não do navegador.
+ * Ela é avisada por e-mail (pelo próprio Gmail) se tiver o Google conectado na Minha Ali; sem isso, emailSent volta false.
+ */
+export async function POST(req: Request) {
+  const caller = await verifyCaller(req);
+  if (!caller || caller.role !== 'patient') return json({ error: 'Acesso permitido só para pacientes.' }, 403);
   try {
-    const { nutritionistId, nutritionistEmail, nutritionistName, patientId, patientName, patientEmail } = await req.json();
-
-    if (!nutritionistEmail || !patientName) {
-      return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
-    }
-
-    const timestamp = new Date().toISOString();
-    const notificationData = {
-      type: 'HiredNotification',
-      nutritionistId: nutritionistId || '',
-      nutritionistEmail,
-      nutritionistName: nutritionistName || 'Nutricionista',
-      patientId: patientId || '',
-      patientName: patientName || 'Novo Paciente',
-      patientEmail: patientEmail || '',
-      title: '🎉 Novo Paciente Contratou Seus Serviços!',
-      message: `O paciente ${patientName} (${patientEmail}) acabou de contratar seu acompanhamento nutricional no NutriAli.`,
-      status: 'sent',
-      createdAt: timestamp,
-      read: false
-    };
-
-    // Save notification log in Firestore
-    try {
-      await addDoc(collection(db, 'notifications'), notificationData);
-      if (nutritionistId) {
-        await addDoc(collection(db, 'users', nutritionistId, 'notifications'), notificationData);
-      }
-    } catch (e) {
-      console.warn('Could not save notification to Firestore:', e);
-    }
-
-    // Simulated email delivery log
-    console.log(`[EMAIL SIMULATOR] Sent email to ${nutritionistEmail}:`, {
-      subject: `[NutriAli] ${patientName} contratou seus serviços de nutrição!`,
-      body: `Olá ${nutritionistName},\n\nO paciente ${patientName} (${patientEmail}) selecionou você como seu nutricionista responsável.\nVocê pode acessar a ficha e o chat do paciente na sua área de trabalho do NutriAli.`
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: `Notificação por e-mail simulada e enviada com sucesso para ${nutritionistEmail}!`,
-      notification: notificationData
-    });
-  } catch (error: any) {
-    console.error('Error in notify-nutritionist:', error);
-    return NextResponse.json({ error: error?.message || 'Erro interno' }, { status: 500 });
+    return json({ success: true, emailSent: await notifyNewPatient(getAdminDb(), caller.uid) });
+  } catch {
+    return json({ success: true, emailSent: false });
   }
 }

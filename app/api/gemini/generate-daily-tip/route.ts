@@ -1,26 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateGeminiContent } from "@/lib/gemini";
+import { NextResponse } from "next/server";
+import { aiErrorResponse, generateAi } from "@/lib/ai";
+import { clip, guardAi } from "@/lib/ai-guard";
 
-export async function POST(req: NextRequest) {
+export const runtime = 'nodejs';
+
+// O endereço da rota mantém o nome antigo; a IA que responde é a configurada em lib/ai.ts.
+export async function POST(req: Request) {
+  // Só o paciente logado pede, com limite de pedidos e de tamanho.
+  const guard = await guardAi(req, { roles: ['patient'], scope: 'daily-tip', limit: 20, maxChars: 2000 });
+  if (!guard.ok) return guard.response;
+
   try {
-    const data = await req.json();
-    const { objective } = data;
+    const objective = clip(guard.body.objective, 200);
 
-    const prompt = `Você é um nutricionista especialista. Forneça UMA dica diária curta, motivacional e prática sobre nutrição e saúde focada no seguinte objetivo: "${objective || 'Saúde e Bem-estar'}". 
-Seja direto, sem introduções. Use, no máximo, 2 frases curtas.`;
+    const prompt = `Você é um nutricionista especialista. Forneça UMA dica diária curta, motivacional e prática sobre nutrição e saúde focada no seguinte objetivo: "${objective || 'Saúde e Bem-estar'}".
+Seja direto, sem introduções, em português do Brasil. Use, no máximo, 2 frases curtas.`;
 
-    const result = await generateGeminiContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      fallbackText: "Beba pelo menos 2 litros de água hoje e priorize alimentos naturais em todas as suas refeições para manter o bem-estar e atingir seus objetivos com saúde!",
-    });
+    const text = await generateAi({ prompt, maxTokens: 500 });
 
-    return NextResponse.json({ text: result.text });
+    return NextResponse.json({ text });
   } catch (error) {
-    console.error('Error generating daily tip:', error);
-    return NextResponse.json({
-      text: "Beba pelo menos 2 litros de água hoje e priorize alimentos naturais em todas as suas refeições para manter o bem-estar e atingir seus objetivos com saúde!"
-    });
+    return aiErrorResponse(error, 'dica do dia');
   }
 }
-

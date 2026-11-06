@@ -44,7 +44,8 @@ export default function ChangePasswordPage() {
       await updatePassword(user, newPassword);
       // Limpa a flag de troca obrigatória no perfil do usuário
       await updateUserData(user.uid, { mustChangePassword: false });
-      router.push('/patient');
+      // Recarrega o app para ele reler o perfil: sem isso, o painel ainda acharia que a troca está pendente.
+      window.location.assign('/patient');
     } catch (err: any) {
       console.error('Password change failed:', err);
       if (err?.code === 'auth/requires-recent-login') {

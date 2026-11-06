@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
-import { Calendar, MessageSquare, Apple, Sparkles, Loader2, Download, Settings, Activity, Save, FileText } from 'lucide-react';
+import { MessageSquare, Sparkles, Loader2, Download, Settings, Activity, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
@@ -13,14 +13,19 @@ import { DailyNutritionTip } from '@/components/daily-nutrition-tip';
 import { PatientSettings } from '@/components/patient-settings';
 import { GuidedTour } from '@/components/guided-tour';
 import { AppointmentScheduler } from '@/components/appointment-scheduler';
-import { MacronutrientsChart } from '@/components/macronutrients-chart';
 import { WaterTracker } from '@/components/water-tracker';
 import { MoodDiary } from '@/components/mood-diary';
 import { WeightProgress } from '@/components/weight-progress';
 import { FoodDiary } from '@/components/food-diary';
 import { Achievements } from '@/components/achievements';
+import { EmailNoticesToggle, NutriMessagesBanner } from '@/components/nutri-notices';
+import { PremiumButton, PremiumLock, usePremium } from '@/components/premium';
 import { useAuth } from '@/components/auth-provider';
 import { getUserData, updateUserData } from '@/lib/db';
+import { ApiError, postJson } from '@/lib/api-client';
+import { formatKgShort } from '@/lib/format';
+import { firstName } from '@/lib/names';
+import { planTextToMarkdown } from '@/lib/plan-text';
 
 export default function PatientDashboard() {
   const [patientData, setPatientData] = useState<any>(null);
@@ -29,105 +34,51 @@ export default function PatientDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
   const [observations, setObservations] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [hasPlan, setHasPlan] = useState(false);
+  const [planError, setPlanError] = useState('');
   const printRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user } = useAuth();
+  const premium = usePremium();
 
   const handlePrint = () => {
     handlePrintOrDownload(printRef.current, 'Plano Alimentar', creativePlan);
   };
 
   useEffect(() => {
-    const isValidPlanFormat = (data: any) => {
-      try {
-        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-        if (!Array.isArray(parsed)) return false;
-        return parsed.every((plan: any) => plan && typeof plan === 'object' && 'id' in plan);
-      } catch {
-        return false;
-      }
-    };
-
-    async function loadData() {
-      if (user) {
-        const data = await getUserData(user.uid);
-        if (data?.savedPlans && isValidPlanFormat(data.savedPlans) && data.savedPlans.length > 0) {
-          setHasPlan(true);
-        }
-        if (data?.patientData) {
-          setPatientData(data.patientData);
-        } else {
-          setPatientData({
-            name: user.displayName || 'Paciente',
-            age: 30,
-            weight: 70,
-            height: 168,
-            initialWeight: 70,
-            targetWeight: 65,
-            objective: 'Saúde e Bem-Estar'
-          });
-        }
+        async function loadData() {
+      // Enquanto a sessão não chega, o painel fica em branco: nada de paciente de exemplo no lugar.
+      if (!user) return;
+      const data = await getUserData(user.uid);
+            const patient = data?.patientData;
+      if (patient?.age && patient?.weight && patient?.height) {
+        setPatientData({ ...patient, name: patient.name || user.displayName || 'Paciente', objective: patient.objective || 'Saúde e Bem-estar' });
       } else {
-        const savedPlans = localStorage.getItem('mockSavedPlans');
-        if (savedPlans && isValidPlanFormat(savedPlans)) {
-          try {
-            const parsedPlans = JSON.parse(savedPlans);
-            if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
-              setHasPlan(true);
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        }
-
-        const saved = localStorage.getItem('mockPatientData');
-        if (saved) {
-          try {
-            setPatientData(JSON.parse(saved));
-          } catch (e) {
-            console.error(e);
-            setPatientData({
-              name: 'Paciente',
-              age: 30,
-              weight: 70,
-              height: 168,
-              initialWeight: 70,
-              targetWeight: 65,
-              objective: 'Saúde e Bem-Estar'
-            });
-          }
-        } else {
-          setPatientData({
-            name: 'Paciente',
-            age: 30,
-            weight: 70,
-            height: 168,
-            initialWeight: 70,
-            targetWeight: 65,
-            objective: 'Saúde e Bem-Estar'
-          });
-        }
+        // Sem idade, peso e altura no prontuário, o painel não inventa valores: a pessoa conclui a triagem.
+        router.replace('/onboarding');
       }
     }
     loadData();
-  }, [user]);
+  }, [user, router]);
 
   const generateCreativePlan = async () => {
     if (!patientData) return;
     setIsGenerating(true);
+    setPlanError('');
     try {
-      const res = await fetch('/api/gemini/generate-creative-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...patientData, observations })
+      // Só o que a IA precisa: o nome e o prontuário inteiro (fotos, medições) não saem do aparelho.
+      const data = await postJson('/api/gemini/generate-creative-plan', {
+        age: patientData.age,
+        weight: patientData.weight,
+        height: patientData.height,
+        objective: patientData.objective,
+        observations,
       });
-      const data = await res.json();
       if (data.text) {
         setCreativePlan(data.text);
       }
     } catch (error) {
       console.error(error);
+      setPlanError(error instanceof ApiError ? error.message : 'Não foi possível criar o cardápio agora. Tente de novo em instantes.');
     } finally {
       setIsGenerating(false);
     }
@@ -143,18 +94,12 @@ export default function PatientDashboard() {
         objective: patientData.objective
       };
       
-      if (user) {
-        const data = await getUserData(user.uid);
-        const savedPlans = data?.savedPlans || [];
-        savedPlans.unshift(newPlan);
-        await updateUserData(user.uid, { savedPlans });
-      } else {
-        const savedPlansStr = localStorage.getItem('mockSavedPlans');
-        const savedPlans = savedPlansStr ? JSON.parse(savedPlansStr) : [];
-        savedPlans.unshift(newPlan);
-        localStorage.setItem('mockSavedPlans', JSON.stringify(savedPlans));
-      }
-      
+      if (!user) return;
+      const data = await getUserData(user.uid);
+      const savedPlans = data?.savedPlans || [];
+      savedPlans.unshift(newPlan);
+      await updateUserData(user.uid, { savedPlans });
+
       router.push('/patient/plan');
     } catch (error) {
       console.error("Error saving plan:", error);
@@ -168,18 +113,18 @@ export default function PatientDashboard() {
   const renderOverview = () => (
     <>
       {/* Top Row: Key Metrics & Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <div className="lg:col-span-1 h-full">
-          <WeightProgress 
-            initialWeight={patientData.initialWeight || patientData.weight + 5} 
-            currentWeight={patientData.weight} 
-            targetWeight={patientData.targetWeight || patientData.weight - 5} 
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
+        <div className="xl:col-span-1 h-full">
+          <WeightProgress
+            initialWeight={patientData.initialWeight || patientData.weight}
+            currentWeight={patientData.weight}
+            targetWeight={patientData.targetWeight}
           />
         </div>
-        <div className="lg:col-span-2 h-full">
+        <div className="h-full">
           <DailyNutritionTip objective={patientData.objective} />
         </div>
-        <div className="lg:col-span-1 h-full">
+        <div className="md:col-span-2 xl:col-span-1 h-full">
           <Card className="tour-chat h-full">
             <CardContent className="pt-6 h-full flex flex-col justify-center">
               <div className="flex flex-col items-center text-center space-y-4">
@@ -213,6 +158,9 @@ export default function PatientDashboard() {
             <p className="text-slate-600 mb-4 text-sm">
               Que tal fugir da rotina? Peça para nossa Inteligência Artificial criar um cardápio diário inovador, totalmente focado no seu objetivo de <strong>{patientData.objective}</strong>!
             </p>
+            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              É uma sugestão de ideias feita pela IA, sem a avaliação da sua nutricionista. Se você tem alguma condição de saúde, alergia ou restrição, fale com ela antes de seguir.
+            </p>
             
             {!creativePlan && !isGenerating && (
               <div className="space-y-4">
@@ -232,6 +180,7 @@ export default function PatientDashboard() {
                   <Sparkles className="w-4 h-4" />
                   Gerar Cardápio Criativo
                 </Button>
+                {planError && <p role="alert" className="text-sm font-medium text-red-700">{planError}</p>}
               </div>
             )}
 
@@ -245,18 +194,22 @@ export default function PatientDashboard() {
             {creativePlan && !isGenerating && (
               <div className="mt-4 bg-white/50 border border-white/60 p-4 rounded-xl">
                 <div ref={printRef} className="markdown-body text-sm text-slate-700 space-y-4 p-4">
-                  <Markdown>{creativePlan}</Markdown>
+                  <Markdown>{planTextToMarkdown(creativePlan)}</Markdown>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 mt-4">
                   <Button onClick={savePlan} disabled={isSaving} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
                     {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                     Salvar Plano
                   </Button>
-                  <Button onClick={() => handlePrint()} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
-                    <Download className="w-4 h-4 mr-2" />
-                    Exportar PDF
-                  </Button>
-                  <Button onClick={() => { if (window.confirm('Você tem certeza?')) setCreativePlan(''); }} variant="outline" className="flex-1 text-xs h-9">
+                  {premium.active ? (
+                    <Button onClick={() => handlePrint()} className="bg-teal-600 hover:bg-teal-700 text-white flex-1 text-xs h-9">
+                      <Download className="w-4 h-4 mr-2" />
+                      Exportar PDF
+                    </Button>
+                  ) : (
+                    <PremiumButton label="Exportar PDF" className="flex-1 text-xs h-9" />
+                  )}
+                  <Button onClick={() => { if (window.confirm('Descartar este cardápio e gerar outro?')) setCreativePlan(''); }} variant="outline" className="flex-1 text-xs h-9">
                     Gerar nova opção
                   </Button>
                 </div>
@@ -271,21 +224,25 @@ export default function PatientDashboard() {
         </div>
       </div>
       
-      {hasPlan ? (
-        <div className="flex flex-col gap-6 mt-6">
-          <div className="w-full">
-            <Achievements />
-          </div>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="tour-evolution lg:col-span-2 h-full">
-              <EvolutionChart />
+      <div className="flex flex-col gap-6 mt-6">
+          {/* Gráficos e conquistas são do Premium; enquanto o Premium carrega, nada aparece no lugar. */}
+          {premium.active ? (
+            <>
+              <div className="w-full">
+                <Achievements />
+              </div>
+
+              <div className="tour-evolution w-full">
+                <EvolutionChart />
+              </div>
+            </>
+          ) : !premium.loading && (
+            <div className="tour-evolution w-full">
+              <PremiumLock feature="charts" />
             </div>
-            <div className="lg:col-span-1 h-full">
-              <MacronutrientsChart />
-            </div>
-          </div>
-          
+          )}
+
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
             <div className="lg:col-span-2 h-full">
               <FoodDiary />
@@ -300,13 +257,6 @@ export default function PatientDashboard() {
             </div>
           </div>
         </div>
-      ) : (
-        <div className="mt-6 border border-slate-200 border-dashed rounded-xl p-12 flex flex-col items-center justify-center text-center bg-white/50">
-          <FileText className="w-12 h-12 text-slate-300 mb-4" />
-          <h3 className="text-lg font-medium text-slate-800">Nenhum plano alimentar ativo</h3>
-          <p className="text-slate-600 mt-2 max-w-md">Para visualizar seu diário de refeições, metas e evolução, gere um novo plano criativo com IA e salve-o em seus planos.</p>
-        </div>
-      )}
     </>
   );
 
@@ -315,12 +265,12 @@ export default function PatientDashboard() {
       <GuidedTour />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold text-slate-800">Olá, {patientData.name.split(' ')[0]}</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Olá, {firstName(patientData.name)}</h1>
           <p className="text-slate-600">Bem-vindo(a) de volta ao seu painel.</p>
           
-          <div className="flex gap-4 mt-2">
+          <div className="flex flex-wrap gap-2 sm:gap-4 mt-2">
             <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Objetivo: {patientData.objective}</span>
-            <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Peso: {patientData.weight}kg</span>
+            <span className="text-xs font-semibold bg-white/40 border border-white/50 text-slate-700 px-3 py-1 rounded-full shadow-sm">Peso: {formatKgShort(patientData.weight)} kg</span>
           </div>
         </div>
 
@@ -343,9 +293,12 @@ export default function PatientDashboard() {
       </div>
 
       {activeTab === 'overview' ? (
-        renderOverview()
+        <>
+          <NutriMessagesBanner />
+          {renderOverview()}
+        </>
       ) : (
-        <div className="pt-2">
+        <div className="pt-2 space-y-6">
           <PatientSettings 
             patientData={patientData} 
             onSave={(newData) => {
@@ -354,6 +307,7 @@ export default function PatientDashboard() {
               window.dispatchEvent(new Event('storage'));
             }} 
           />
+          <EmailNoticesToggle />
         </div>
       )}
     </div>
