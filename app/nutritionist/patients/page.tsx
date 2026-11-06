@@ -71,7 +71,7 @@ export default function PatientsList() {
             className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-2 shadow-sm"
           >
             <UserPlus className="w-4 h-4" />
-            + Novo Paciente
+            Novo Paciente
           </Button>
         </div>
       </div>
