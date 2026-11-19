@@ -9,6 +9,7 @@ import { getPatientById, updatePatient, deletePatient, Patient, Plan } from '@/l
 import { ApiError, postJson } from '@/lib/api-client';
 import { AliFoodLogs } from '@/components/ali-food-logs';
 import { ConsultationNotes } from '@/components/consultation-notes';
+import { ClinicalProfile } from '@/components/clinical-profile';
 import { PlanDayTotals, PlanMealTotals } from '@/components/plan-nutrition';
 import { ExcelDownloadButton } from '@/components/excel-download';
 import { formatDayKey, formatKgShort, localDayKey } from '@/lib/format';
@@ -92,6 +93,8 @@ export default function PatientProfile() {
       };
 
       const json = await postJson('/api/gemini/generate-plan', {
+        // O servidor junta a ficha clínica e as preferências da nutricionista (sem o nome do paciente).
+        patientId: patient.id,
         // O nome do paciente não vai para a IA: ela não precisa dele para montar o rascunho.
         patientContext: JSON.stringify({
           idade: patient.age,
@@ -337,6 +340,7 @@ export default function PatientProfile() {
               )}
             </CardContent>
           </Card>
+          <ClinicalProfile patientId={patient.id} />
           <ConsultationNotes patientId={patient.id} />
         </div>
 
