@@ -71,7 +71,8 @@ export function Input({
   required = false,
   step,
   min,
-  max
+  max,
+  maxLength
 }: {
   id?: string;
   label?: string;
@@ -84,6 +85,7 @@ export function Input({
   step?: string | number;
   min?: string | number;
   max?: string | number;
+  maxLength?: number;
 }) {
   return (
     <div className={`space-y-1 ${className}`}>
@@ -98,6 +100,7 @@ export function Input({
         step={step}
         min={min}
         max={max}
+        maxLength={maxLength}
         className="w-full rounded-lg bg-white/80 border border-white/50 px-3 py-2 text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm transition-shadow"
       />
     </div>

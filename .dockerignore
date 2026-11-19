@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+outputs
+work
+**/*service-account*.json
+**/*serviceAccount*.json
+**/*.pem
+**/*.key
