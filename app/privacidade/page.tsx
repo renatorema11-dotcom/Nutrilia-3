@@ -37,8 +37,8 @@ export default function PrivacyPage() {
         <Section title="2. Que dados tratamos">
           <ul className="list-disc space-y-1 pl-5">
             <li><strong>Cadastro:</strong> nome, e-mail, foto (se você enviar) e, no caso de nutricionistas, telefone e CRN.</li>
-            <li><strong>Dados de saúde (dados sensíveis):</strong> idade, peso, altura, medidas, objetivo, plano alimentar, refeições e fotos de refeições que você registra, água, humor, consultas e as conversas com a sua nutricionista e com a Ali.</li>
-            <li><strong>Uso do aplicativo:</strong> data do último acesso e o registro das ações da Ali, sem o conteúdo das mensagens.</li>
+            <li><strong>Dados de saúde (dados sensíveis):</strong> idade, peso, altura, medidas, objetivo, plano alimentar, refeições e fotos de refeições que você registra, água, humor, consultas, a ficha clínica que a sua nutricionista preenche (alergias, intolerâncias, restrições alimentares, condições de saúde, medicamentos e suplementos) e as conversas com a sua nutricionista e com a Ali.</li>
+            <li><strong>Uso do aplicativo:</strong> data do último acesso e o registro das ações da Ali, sem o conteúdo das mensagens. No caso de nutricionistas, também as preferências de trabalho e as pendências que elas pedem para a Ali lembrar.</li>
             <li><strong>Pagamentos:</strong> a situação das cobranças do Premium e das consultas (em aberto, paga, estornada), os valores e o código do cliente no Asaas. O CPF de quem paga e os dados do cartão vão direto para o Asaas e não ficam guardados no NutriAli.</li>
           </ul>
         </Section>
