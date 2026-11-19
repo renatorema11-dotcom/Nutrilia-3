@@ -39,6 +39,23 @@ function joinSpoken(parts: string[]): string {
 }
 
 /**
+ * Acha o alimento pelo nome falado: a busca do app (com o mais comum no Brasil na frente) e, se nada tiver todas as
+ * palavras, o mais parecido (exact = false). Traz até duas outras opções. null quando nada parece. Quem chama confere
+ * o tamanho do texto antes.
+ */
+export function resolveFood(text: string): { food: FoodItem; exact: boolean; others: FoodItem[] } | null {
+  const searched = searchFoods(text, { limit: 100 });
+  const preferred = foodById(FOOD_DEFAULTS[foodSearchText(text).split(' ')[0]]);
+  const exact = (preferred && searched.some((other) => other.id === preferred.id)
+    ? [preferred, ...searched.filter((other) => other.id !== preferred.id)]
+    : searched).slice(0, 3);
+  const found: FoodItem[] = exact.length ? exact : foodCandidates(text, 3);
+  if (!found.length) return null;
+  const [food, ...others] = found;
+  return { food, exact: exact.length > 0, others };
+}
+
+/**
  * Procura o alimento (busca do app; se nada tiver todas as palavras, o mais parecido) e responde pela porção pedida
  * (100 gramas quando ninguém disse a quantidade). Cita até duas outras opções para a pessoa corrigir se for outro.
  */
@@ -49,19 +66,14 @@ export function foodInfo(rawFood: unknown, rawGrams?: unknown): FoodInfoResult {
   const grams = emptyGrams ? 100 : infoGrams(rawGrams);
   if (grams === null) return { ok: false, status: 422, speech: 'Diga a quantidade em gramas, entre 1 e 2000.' };
 
-  const searched = searchFoods(text, { limit: 100 });
-  const preferred = foodById(FOOD_DEFAULTS[foodSearchText(text).split(' ')[0]]);
-  const exact = (preferred && searched.some((other) => other.id === preferred.id)
-    ? [preferred, ...searched.filter((other) => other.id !== preferred.id)]
-    : searched).slice(0, 3);
-  const found: FoodItem[] = exact.length ? exact : foodCandidates(text, 3);
-  if (!found.length) {
+  const resolved = resolveFood(text);
+  if (!resolved) {
     return { ok: false, status: 404, speech: `Não achei ${text} na tabela TACO. Ela traz alimentos in natura e preparações básicas; produtos de marca e suplementos não estão nela.` };
   }
-  const [food, ...others] = found;
+  const { food, exact, others } = resolved;
   const portion = foodPortion(food, grams);
   const value = (key: NutrientKey) => portion[key];
-  const intro = exact.length ? 'Pela tabela TACO' : `O mais parecido que achei na tabela TACO foi ${spokenName(food)}. Pela tabela`;
+  const intro = exact ? 'Pela tabela TACO' : `O mais parecido que achei na tabela TACO foi ${spokenName(food)}. Pela tabela`;
   const alternatives = others.length ? ` Se for outro, a tabela também tem ${joinSpoken(others.map(spokenName))}.` : '';
 
   if (food.underReview && typeof portion.kcal !== 'number') {

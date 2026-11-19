@@ -1,7 +1,7 @@
 // Política de Privacidade do NutriAli: versão em vigor, responsável e contato. Sem segredos: roda no navegador e no servidor.
 // Mudou o texto da política em /privacidade? Troque a versão: todo mundo vê o termo de novo e aceita a versão nova.
-export const PRIVACY_VERSION = '2026-10-29';
-export const PRIVACY_VERSION_LABEL = '29 de outubro de 2026';
+export const PRIVACY_VERSION = '2026-11-17';
+export const PRIVACY_VERSION_LABEL = '17 de novembro de 2026';
 export const PRIVACY_CONTROLLER = 'NutriAli';
 export const PRIVACY_CONTACT = 'nutriali44@gmail.com';
 

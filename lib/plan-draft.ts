@@ -12,7 +12,9 @@ Responda SOMENTE com um objeto JSON válido, sem texto antes ou depois, neste fo
 - "days": de 1 a 3 grupos de dias (ex.: "Segunda a Sexta", "Fim de Semana").
 - "meals": as refeições do dia, em ordem, com horário no formato HH:MM.
 - "items": alimentos com quantidade, em português do Brasil, um alimento por item.
-- "gramas": o peso estimado em gramas de cada item, pronto para comer, na mesma ordem de "items".`;
+- "gramas": o peso estimado em gramas de cada item, pronto para comer, na mesma ordem de "items".
+- Se o contexto trouxer "fichaClinica": nenhum item pode conter o que está em alergias, intolerancias ou restricoes; evite o que está em naoGosta; leve em conta condicoesDeSaude, medicamentos e preferencias.
+- Se o contexto trouxer "preferenciasDaNutricionista": siga essas preferências de trabalho dela, a menos que as instruções adicionais digam outra coisa.`;
 
 /** O pedido à IA: dados do paciente (sem o nome) e as orientações da nutricionista. */
 export function planRequest(patientContext: string, instructions: string): AiRequest {

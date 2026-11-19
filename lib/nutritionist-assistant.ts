@@ -17,6 +17,9 @@ import { agendaSheet, patientSheetRowOf, patientsSheet, planSheet, weightEntries
 import type { AgendaEntry, SheetSpec } from './sheet-specs';
 import { createSheet, xlsxExportUrl } from './spreadsheets';
 import { reportServerError } from './server-alerts';
+import { clinicalAlertLine, loadClinicalProfile } from './clinical-profile';
+import { loadFollowups } from './ali-memory';
+import { planBrainContext } from './nutritionist-brain';
 
 const NOT_CONNECTED = 'A sua conta do Google não está conectada à Ali. Entre em Minha Ali e clique em Conectar Google.';
 const DAILY_EMAIL_LIMIT = 40;
@@ -82,6 +85,15 @@ function pickOne<T extends { name: string }>(people: T[], spoken: unknown, kind:
   if (matches.length === 1) return { ok: true, value: matches[0] };
   if (!matches.length) return { ok: false, result: { ok: false, status: 404, speech: `Não encontrei ninguém com o nome ${name}. Pode repetir o nome completo?` } };
   return { ok: false, result: { ok: false, status: 409, speech: `Encontrei mais de uma pessoa: ${joinPt(matches.slice(0, 5).map((m) => m.name))}. Qual delas?` } };
+}
+
+/**
+ * O paciente dela pelo nome falado, só com uid e nome (para as ações do segundo cérebro, lib/nutritionist-actions.ts).
+ * Nome que não aponta para uma pessoa só da lista dela volta como a pergunta que a Ali deve fazer.
+ */
+export async function findPatient(db: Firestore, nutritionistId: string, spoken: unknown): Promise<Picked<{ uid: string; name: string }>> {
+  const picked = pickOne(await loadPatients(db, nutritionistId), spoken, 'do paciente');
+  return picked.ok ? { ok: true, value: { uid: picked.value.uid, name: picked.value.name } } : picked;
 }
 
 export async function listPatients(db: Firestore, nutritionistId: string, search: unknown): Promise<ActionResult> {
@@ -564,18 +576,23 @@ export async function consultationBrief(db: Firestore, nutritionistId: string, p
 
   const since = new Date(now.getTime() - BRIEF_DAYS * ONE_DAY_MS);
   const ref = db.collection('patients').doc(patient.uid);
-  const [snap, profileSnap, logsSnap, notes, requests, seen] = await Promise.all([
+  const [snap, profileSnap, logsSnap, notes, requests, seen, clinical, followups] = await Promise.all([
     ref.get(),
     db.collection('users').doc(patient.uid).get(),
     ref.collection('foodLogs').where('loggedAt', '>=', since.toISOString()).get(),
     listNotesFor(db, nutritionistId, patient.uid, 1),
     pendingRequests(db, nutritionistId),
     lastSeen([patient.uid]).catch(() => null),
+    loadClinicalProfile(db, nutritionistId, patient.uid),
+    loadFollowups(db, nutritionistId, { patientUid: patient.uid }),
   ]);
   const data = snap.exists ? snap.data() || {} : {};
   const profile = profileSnap.exists ? profileSnap.data() || {} : {};
   const parts = [`Resumo de ${patient.name}, ${consultation ? `com consulta marcada para ${consultation.label}` : 'sem consulta marcada'}.`];
   if (patient.objective) parts.push(`Objetivo: ${patient.objective}.`);
+  // Segundo cérebro: alergias, intolerâncias e restrições da ficha vêm logo no começo, para não passarem despercebidas.
+  const clinicalAlert = clinicalAlertLine(clinical);
+  if (clinicalAlert) parts.push(clinicalAlert);
 
   // Peso: a última medição, a mudança desde a anterior e quanto falta para a meta.
   const measures = measurementsOf(data);
@@ -623,6 +640,11 @@ export async function consultationBrief(db: Firestore, nutritionistId: string, p
   parts.push(patient.plan === 'approved' ? (patient.pendingDraft ? 'Plano alimentar aprovado, com um rascunho novo esperando a sua aprovação.' : 'Plano alimentar aprovado.') : patient.plan === 'draft' ? 'Plano em rascunho, esperando a sua aprovação.' : 'Ainda sem plano alimentar.');
   const openRequest = requests.find((request) => request.patientUid === patient.uid) || null;
   if (openRequest) parts.push(`Tem um pedido de consulta aberto, ${preference(openRequest.preferredDate)}.`);
+  const openFollowups = followups.filter((item) => item.status === 'open');
+  if (openFollowups.length) {
+    const shown = openFollowups.slice(0, 3).map((item) => clipSpoken(item.text, 100));
+    parts.push(`${openFollowups.length === 1 ? 'Pendência aberta' : `${openFollowups.length} pendências abertas`}: ${joinPt(shown)}${openFollowups.length > shown.length ? ', entre outras' : ''}.`);
+  }
   const lastNote = notes[0] || null;
   parts.push(lastNote ? `Última anotação de consulta, de ${noteDay(lastNote.createdAt, tz)}: ${withPeriod(clipSpoken(lastNote.text, 300))}` : 'Ainda não há anotações de consulta.');
 
@@ -634,6 +656,8 @@ export async function consultationBrief(db: Firestore, nutritionistId: string, p
       weight: current, previousWeight: previous ? previous.weight : null, targetWeight: target, mealsLogged: logs.length, mealDays,
       waterToday: water, moodToday: mood, awayDays, neverSeen, plan: patient.plan, openRequest: openRequest ? openRequest.preferredDate : null,
       lastNote: lastNote ? { createdAt: lastNote.createdAt, text: clipSpoken(lastNote.text, 300) } : null,
+      clinicalAlert: clinicalAlert || null,
+      followups: openFollowups.slice(0, 5).map((item) => ({ text: item.text, dueDate: item.dueDate })),
     },
   };
 }
@@ -789,6 +813,8 @@ export async function createPlanDraft(db: Firestore, nutritionistId: string, inp
     pesoAtual: last ? last.weight : patient.weight,
     altura: heights.length ? heights[heights.length - 1] : typeof data.height === 'number' ? data.height : null,
     pesoMeta: patient.targetWeight,
+    // Segundo cérebro: a ficha clínica (alergias, restrições, condições) e as preferências de trabalho dela.
+    ...(await planBrainContext(db, nutritionistId, patient.uid)),
   });
   const tz = (await loadSettings(db, nutritionistId)).timezone;
   const job: PlanJob = { id: newNonce(), status: 'running', startedAt: now.toISOString() };

@@ -1,6 +1,6 @@
 // Direitos da LGPD dentro do app. Somente no servidor.
-//  - Baixar meus dados: o paciente recebe em um arquivo o que o app guarda sobre ele (sem as anotações que a
-//    nutricionista faz das consultas, que ficam com ela).
+//  - Baixar meus dados: o paciente recebe em um arquivo o que o app guarda sobre ele, inclusive a ficha clínica (alergias,
+//    condições, medicamentos), mas sem as anotações que a nutricionista faz das consultas, que ficam com ela.
 //  - Pedido de exclusão: vira um pedido analisado pelo responsável pelo NutriAli (o prontuário pode ter prazo
 //    de guarda). O responsável recebe um e-mail; a nutricionista do paciente também é avisada.
 //  - O responsável decide na página /admin/exclusoes: apagar os dados de vez ou manter a conta.
@@ -9,6 +9,8 @@ import { emailLayout, escapeHtml, getAccess, isValidEmail, p, sendMail } from '.
 import { adminEmails, adminSender } from './nutritionist-approval';
 import { PRIVACY_CONTACT, PRIVACY_CONTROLLER, PRIVACY_VERSION } from './privacy';
 import { reportServerError } from './server-alerts';
+import { eraseClinicalProfiles, exportClinicalProfiles } from './clinical-profile';
+import { erasePatientMemory } from './ali-memory';
 
 export const DELETIONS_COLLECTION = 'deletionRequests';
 const PRIVACY_APP_URL = 'https://app.nutriali.cloud';
@@ -34,11 +36,12 @@ export async function exportPatientData(db: Firestore, uid: string, now = new Da
 
   const ref = db.collection('patients').doc(uid);
   const nutritionistId = typeof record.nutritionistId === 'string' ? record.nutritionistId : '';
-  const [logs, messages, requests, appointments] = await Promise.all([
+  const [logs, messages, requests, appointments, clinicalProfiles] = await Promise.all([
     ref.collection('foodLogs').get(),
     nutritionistId ? db.collection('chats').doc(`${uid}_${nutritionistId}`).collection('messages').get() : Promise.resolve({ docs: [] as { data: () => Data }[] }),
     db.collection('appointmentRequests').where('patientUid', '==', uid).get(),
     db.collection('aliAppointments').where('patientUid', '==', uid).get(),
+    exportClinicalProfiles(db, uid),
   ]);
   const byDate = (field: string) => (a: Data, b: Data) => String(a[field] || '').localeCompare(String(b[field] || ''));
   return {
@@ -51,6 +54,7 @@ export async function exportPatientData(db: Firestore, uid: string, now = new Da
     },
     conta: account,
     prontuario: record,
+    fichaClinica: clinicalProfiles,
     refeicoesRegistradas: logs.docs.map((doc) => doc.data() || {}).sort(byDate('loggedAt')),
     conversaComNutricionista: messages.docs.map((doc) => {
       const m = doc.data() || {};
@@ -178,7 +182,7 @@ async function deleteDocs(docs: { ref: { delete: () => Promise<unknown> } }[]) {
   for (const doc of docs) await doc.ref.delete();
 }
 
-/** Apaga de vez os dados de um paciente: prontuário, refeições, conversa, pedidos, consultas, anotações, avisos e o login. */
+/** Apaga de vez os dados de um paciente: prontuário, ficha clínica, refeições, conversa, pedidos, consultas, anotações, pendências, avisos e o login. */
 async function erasePatient(db: Firestore, uid: string, nutritionistId: string, deleteLogin: DeleteLogin) {
   const patientRef = db.collection('patients').doc(uid);
   await deleteDocs((await patientRef.collection('foodLogs').get()).docs);
@@ -190,6 +194,9 @@ async function erasePatient(db: Firestore, uid: string, nutritionistId: string, 
   for (const col of ['appointmentRequests', 'aliAppointments', 'consultationNotes']) {
     await deleteDocs((await db.collection(col).where('patientUid', '==', uid).get()).docs);
   }
+  // Segundo cérebro da Ali: a ficha clínica e as pendências ligadas a este paciente.
+  await eraseClinicalProfiles(db, uid);
+  await erasePatientMemory(db, uid);
   // O registro de uso da Ali fica (só contagens), mas sem apontar para a pessoa.
   for (const doc of (await db.collection('aiActions').where('patientUid', '==', uid).get()).docs) await doc.ref.set({ patientUid: null }, { merge: true });
   await db.collection('patientNotices').doc(uid).delete();
