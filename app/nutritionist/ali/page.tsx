@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Bot, CalendarCheck, CheckCircle2, FileSpreadsheet, Loader2, Mail, Plus, Save, Trash2, Unplug, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button } from '@/components/ui';
 import { useAuth } from '@/components/auth-provider';
+import { AliMemoryCard } from '@/components/ali-memory';
 import { auth } from '@/lib/firebase';
 import { ALI_LIMITS, MAX_CONTACTS, WEEKDAY_NAMES, defaultAliSettings, describeAttendance, sanitizeContacts, type AliContact, type AliSettings, type ConsultationMode } from '@/lib/ali-settings';
 
@@ -397,6 +398,9 @@ function MinhaAliContent() {
           Salvar configurações
         </Button>
       </div>
+
+      {/* A memória salva na hora, sem o botão acima: fica depois dele para não confundir. */}
+      <AliMemoryCard />
     </div>
   );
 }
