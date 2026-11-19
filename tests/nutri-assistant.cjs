@@ -6,7 +6,7 @@ const { createFirestore, createGoogle, loadLib } = require('./fakes.cjs');
 
 const { store, db, FieldValue } = createFirestore();
 const google = createGoogle();
-const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'daily-log.ts', 'consultation-notes.ts', 'taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'nutritionist-assistant.ts'], { FieldValue, fetch: google.fetch });
+const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'daily-log.ts', 'consultation-notes.ts', 'taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'clinical-profile.ts', 'ali-memory.ts', 'nutrition-calc.ts', 'nutritionist-brain.ts', 'nutritionist-assistant.ts'], { FieldValue, fetch: google.fetch });
 context.db = db;
 const run = (code) => vm.runInContext(code, context);
 const call = (fn, input, extra = '') => { context.input = input; return run(`${fn}(db, 'nutri-1', input${extra})`); };
@@ -555,6 +555,32 @@ context.now = NOW;
     context.name = 'Paciente Inexistente';
     assert.equal((await run("planDraft(db, 'nutri-1', name, now)")).status, 404);
     assert.equal(tasks.length, 0);
+  });
+
+  await check('segundo cérebro: o resumo traz os alertas da ficha e as pendências; o rascunho leva a ficha e as preferências, sem nomes', async () => {
+    store.set('clinicalProfiles/nutri-1_p-ana', { nutritionistId: NUTRI, patientUid: 'p-ana', allergies: ['amendoim'], intolerances: ['lactose'], medications: ['metformina'] });
+    store.set('aliMemory/f1', { nutritionistId: NUTRI, kind: 'followup', text: 'Pedir o exame de vitamina D', patientUid: 'p-ana', patientName: 'Ana Souza', status: 'open', dueDate: null, createdAt: '2026-10-12T10:00:00.000Z', source: 'ali' });
+    store.set('aliMemory/f2', { nutritionistId: NUTRI, kind: 'followup', text: 'Já resolvida', patientUid: 'p-ana', patientName: 'Ana Souza', status: 'done', dueDate: null, createdAt: '2026-10-12T10:00:00.000Z', source: 'ali' });
+    store.set('aliMemory/f3', { nutritionistId: 'nutri-2', kind: 'followup', text: 'De outra nutricionista', patientUid: 'p-ana', patientName: 'Ana', status: 'open', dueDate: null, createdAt: '2026-10-12T10:00:00.000Z', source: 'ali' });
+    store.set('aliMemory/p1', { nutritionistId: NUTRI, kind: 'preference', text: 'Prefiro planos com 5 refeições', createdAt: '2026-10-01T10:00:00.000Z', source: 'ali' });
+    context.name = 'Ana Souza';
+    const brief = await run("consultationBrief(db, 'nutri-1', name, lastSeen, now)");
+    assert.match(brief.speech, /Objetivo: Emagrecimento\. Atenção na ficha: alergia a amendoim; intolerância a lactose\. Peso atual/);
+    assert.match(brief.speech, /Pendência aberta: Pedir o exame de vitamina D\. Última anotação/);
+    assert.ok(!brief.speech.includes('Já resolvida') && !brief.speech.includes('De outra nutricionista'));
+    assert.equal(brief.brief.clinicalAlert, 'Atenção na ficha: alergia a amendoim; intolerância a lactose.');
+    assert.equal(brief.brief.followups.length, 1);
+
+    aiCalls.length = 0;
+    context.input = { patientName: 'Ana Souza', text: 'Sem glúten', force: true };
+    await run("createPlanDraft(db, 'nutri-1', input, generate, later, now)");
+    await tasks.shift()();
+    const sent = JSON.parse(aiCalls[0][0]);
+    assert.deepEqual(sent.fichaClinica.alergias, ['amendoim']);
+    assert.deepEqual(sent.fichaClinica.medicamentos, ['metformina']);
+    assert.match(sent.preferenciasDaNutricionista, /5 refeições/);
+    assert.ok(!aiCalls[0][0].includes('Ana') && !aiCalls[0][0].includes('vitamina D'));
+    for (const key of ['clinicalProfiles/nutri-1_p-ana', 'aliMemory/f1', 'aliMemory/f2', 'aliMemory/f3', 'aliMemory/p1']) store.delete(key);
   });
 
   await check('sem Google conectado, a Ali explica onde conectar', async () => {

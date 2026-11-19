@@ -8,7 +8,7 @@ const { store, db, FieldValue } = createFirestore();
 const google = createGoogle();
 const reports = [];
 const context = loadLib(['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'appointments.ts', 'weekly-report.ts', 'daily-log.ts', 'consultation-notes.ts',
-  'taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'sheet-specs.ts', 'spreadsheets.ts', 'nutritionist-assistant.ts'],
+  'taco-foods.ts', 'food-table.ts', 'plan-nutrition.ts', 'sheet-specs.ts', 'spreadsheets.ts', 'clinical-profile.ts', 'ali-memory.ts', 'nutrition-calc.ts', 'nutritionist-brain.ts', 'nutritionist-assistant.ts'],
 { FieldValue, fetch: google.fetch, reportServerError: (message) => reports.push(message) });
 context.db = db;
 const run = (code) => vm.runInContext(code, context);

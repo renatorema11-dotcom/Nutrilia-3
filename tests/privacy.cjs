@@ -7,7 +7,7 @@ const { createFirestore, createGoogle, loadLib } = require('./fakes.cjs');
 const { store, db, FieldValue } = createFirestore();
 const google = createGoogle();
 const context = loadLib(
-  ['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'crn.ts', 'nutritionist-approval.ts', 'privacy.ts', 'account-privacy.ts'],
+  ['ali-settings.ts', 'agenda.ts', 'google-workspace.ts', 'crn.ts', 'nutritionist-approval.ts', 'privacy.ts', 'clinical-profile.ts', 'ali-memory.ts', 'account-privacy.ts'],
   { FieldValue, fetch: google.fetch },
 );
 context.db = db;
@@ -45,6 +45,12 @@ async function check(name, fn) { google.sent.length = 0; await fn(); count++; }
   store.set('patients/p-bia', { name: 'Bia Costa', nutritionistId: 'nutri-1' });
   store.set('appointmentRequests/r2', { patientUid: 'p-bia', nutritionistId: 'nutri-1', status: 'pending' });
   store.set('consultationNotes/n2', { nutritionistId: 'nutri-1', patientUid: 'p-bia', text: 'Outra' });
+  // Segundo cérebro da Ali: ficha clínica e pendências ligadas às pacientes, e uma preferência da nutricionista.
+  store.set('clinicalProfiles/nutri-1_p-ana', { nutritionistId: 'nutri-1', patientUid: 'p-ana', allergies: ['amendoim'], medications: ['metformina'], updatedAt: '2026-10-14T11:00:00.000Z', updatedBy: 'ali' });
+  store.set('clinicalProfiles/nutri-1_p-bia', { nutritionistId: 'nutri-1', patientUid: 'p-bia', allergies: ['camarão'] });
+  store.set('aliMemory/m1', { nutritionistId: 'nutri-1', kind: 'followup', text: 'Cobrar exame da Ana', patientUid: 'p-ana', patientName: 'Ana Souza', status: 'open', createdAt: '2026-10-14T11:00:00.000Z' });
+  store.set('aliMemory/m2', { nutritionistId: 'nutri-1', kind: 'followup', text: 'Cobrar exame da Bia', patientUid: 'p-bia', patientName: 'Bia Costa', status: 'open', createdAt: '2026-10-14T11:00:00.000Z' });
+  store.set('aliMemory/m3', { nutritionistId: 'nutri-1', kind: 'preference', text: 'Planos com 5 refeições', createdAt: '2026-10-14T11:00:00.000Z' });
 
   await check('aceite do termo: só vale a versão em vigor', async () => {
     assert.equal(run("hasCurrentConsent({ privacyConsent: newConsent(now) })"), true);
@@ -69,6 +75,11 @@ async function check(name, fn) { google.sent.length = 0; await fn(); count++; }
     assert.deepEqual(data.consultas, [{ quando: 'sexta, 17', inicio: '2026-10-17T09:00:00-03:00', modo: 'online', situacao: 'marcada' }]);
     assert.ok(!JSON.stringify(data).includes('Anotação reservada'));
     assert.ok(!JSON.stringify(data).includes('Bia'));
+    // A ficha clínica é dado de saúde dela: sai no arquivo, sem o identificador interno da nutricionista e sem as pendências.
+    assert.equal(data.fichaClinica.length, 1);
+    assert.ok(JSON.stringify(data.fichaClinica).includes('amendoim') && JSON.stringify(data.fichaClinica).includes('metformina'));
+    assert.ok(!JSON.stringify(data.fichaClinica).includes('nutri-1') && !JSON.stringify(data).includes('camarão'));
+    assert.ok(!JSON.stringify(data).includes('Cobrar exame'));
     // Plano ainda em rascunho não sai.
     store.set('patients/p-x', { name: 'X', currentPlan: { status: 'draft' } });
     assert.equal(plain(await run("exportPatientData(db, 'p-x', now)")).prontuario.currentPlan, undefined);
@@ -134,6 +145,9 @@ async function check(name, fn) { google.sent.length = 0; await fn(); count++; }
     assert.deepEqual(store.get('deletionRequests/p-ana'), { uid: 'p-ana', role: 'patient', requestedAt: NOW.toISOString(), status: 'deleted', decidedAt: NOW.toISOString(), decidedBy: 'dono@exemplo.com' });
     // Os dados de outra paciente e os da nutricionista continuam.
     for (const key of ['patients/p-bia', 'appointmentRequests/r2', 'consultationNotes/n2', 'users/nutri-1']) assert.ok(store.has(key), key);
+    // Ficha e pendência da Ana somem; as da Bia e a preferência da nutricionista ficam.
+    assert.equal(store.has('aliMemory/m1'), false);
+    for (const key of ['clinicalProfiles/nutri-1_p-bia', 'aliMemory/m2', 'aliMemory/m3']) assert.ok(store.has(key), key);
   });
 
   console.log(`${count} verificações da privacidade (LGPD) passaram. Nenhum serviço externo foi chamado.`);

@@ -11,7 +11,8 @@ const strip = (file) => stripTypeScriptTypes(fs.readFileSync(path.join(__dirname
   .replace(/^import .*;\r?\n/gm, '')
   .replace(/^export (?=(async )?function|const|let)/gm, '');
 // A regra de "cadastro aprovado" é a de verdade (lib/nutritionist-approval.ts), não uma cópia.
-const code = `${strip('lib/firebase-admin.ts')}\n${strip('lib/nutritionist-approval.ts')}\n${strip('app/api/agent/nutritionist-action/route.ts')}\nthis.POST = POST;`;
+// A lista de ações também é a de verdade (lib/nutritionist-actions.ts, a mesma do servidor MCP); as funções são de mentira.
+const code = `${strip('lib/firebase-admin.ts')}\n${strip('lib/nutritionist-approval.ts')}\n${strip('lib/nutritionist-actions.ts')}\n${strip('app/api/agent/nutritionist-action/route.ts')}\nthis.POST = POST;`;
 // Tabela TACO real (lib/food-info.ts) para a pergunta "quantas calorias tem…?".
 const { foodInfo } = require('./fakes.cjs').loadLib(['taco-foods.ts', 'food-table.ts', 'food-info.ts'], {});
 const secret = 'local-test-secret-not-for-deployment-123456';
@@ -51,14 +52,23 @@ async function test(name, options, status, inspect = () => {}) {
     createPlanDraft: fixed('createPlanDraft', { plan: { patientName: 'Ana', status: 'running' } }),
     planDraft: fixed('planDraft', { plan: { patientName: 'Ana', status: 'draft' } }),
     createSpreadsheet: fixed('createSpreadsheet', { spreadsheet: { title: 'Pacientes — NutriAli', url: 'https://docs.google.com/spreadsheets/d/x/edit', rows: 4, kind: 'patients' } }),
+    // Ações novas acham o paciente antes: o nome falado vira { uid, name } só se for paciente dela.
+    findPatient: async (_db, uid, spoken) => {
+      events.push(['findPatient', uid, spoken]);
+      return spoken === 'Ninguém' ? { ok: false, result: { ok: false, status: 404, speech: 'Não encontrei ninguém com o nome Ninguém.' } } : { ok: true, value: { uid: 'p-ana', name: 'Ana' } };
+    },
     ...options.assistant,
   };
+  // Módulos do segundo cérebro de mentira: registram quem foi chamado e com o quê.
+  const fake = (label) => new Proxy({}, { get: (_, fn) => async (...args) => { events.push([`${label}.${String(fn)}`, ...args.slice(1)]); return { ok: true, speech: `${label}.${String(fn)} ok` }; } });
+  const foods = new Proxy({}, { get: (_, fn) => (input) => { events.push([`foods.${String(fn)}`, input]); return { ok: true, speech: 'ok' }; } });
   const env = { AGENT_API_SECRET: secret, FIREBASE_SERVICE_ACCOUNT_KEY: JSON.stringify({ project_id: cfg.projectId }), ...options.env };
   const context = vm.createContext({
     Buffer, Request, Response, console: { error: () => {} }, reportServerError: () => {}, process: { env }, timingSafeEqual, firebaseConfig: cfg, assistant,
     // O rascunho do plano usa a IA (lib/plan-draft.ts) e o "after" do Next; aqui os dois são de mentira.
     generatePlanDraft: async () => ({ days: [] }), after: (task) => events.push(['after', typeof task]),
-    foodInfo,
+    foodInfo, foods, memory: fake('memory'), clinical: fake('clinical'), timeline: fake('timeline'), brain: fake('brain'),
+    loadSettings: async () => ({ timezone: 'America/Sao_Paulo' }), localDateKey: () => '2026-11-17',
     getApps: () => [], cert: (a) => a, initializeApp: () => ({ name: 'test' }),
     getAuth: () => ({ verifyIdToken: async (token, revocation) => {
       events.push(['verify', token, revocation]);
@@ -106,7 +116,8 @@ async function test(name, options, status, inspect = () => {}) {
   await test('Payload em lista', { body: { action: 'list_patients', payload: [] } }, 400);
   await test('Ação fora da lista', { body: { action: 'delete_patient' } }, 400);
   await test('Ação de paciente não vale aqui', { body: { action: 'log_meal', confirmed: true } }, 400);
-  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft', 'create_spreadsheet']) {
+  for (const action of ['schedule_consultation', 'reschedule_consultation', 'cancel_consultation', 'create_event', 'send_email', 'log_measurement', 'send_chat_message', 'send_plan_email', 'decline_appointment_request', 'add_consultation_note', 'create_plan_draft', 'create_spreadsheet',
+    'update_clinical_profile', 'remember_preference', 'forget_preference', 'add_followup', 'complete_followup']) {
     await test(`Exige confirmação: ${action}`, { body: { action, payload: {} } }, 422);
     await test(`Confirmação em texto não vale: ${action}`, { body: { action, confirmed: 'true', payload: {} } }, 422);
   }
@@ -215,6 +226,39 @@ async function test(name, options, status, inspect = () => {}) {
     const audit = events.find((e) => e[0] === 'audit');
     assert.equal(audit[2].action, 'list_contacts');
     assert.ok(!JSON.stringify(audit[2]).includes('detalhe interno'));
+  });
+  // Segundo cérebro: as ações novas passam pela mesma porta (login, papel, aprovação, confirmação e auditoria).
+  await test('Ficha clínica é leitura e só acha paciente da nutricionista autenticada', { body: { action: 'get_clinical_profile', payload: { patientName: 'Ana', nutritionistId: 'nutri-B' } } }, 200, (_, __, acted) => {
+    assert.deepEqual(acted[0], ['findPatient', 'nutri-A', 'Ana']);
+    assert.equal(acted[1][0], 'clinical.getClinicalProfile');
+    assert.equal(acted[1][1], 'nutri-A');
+    assert.deepEqual(acted[1][2], { uid: 'p-ana', name: 'Ana' });
+  });
+  await test('Paciente que não é dela: a ação nem roda', { reachesAction: true, body: { action: 'get_clinical_profile', payload: { patientName: 'Ninguém' } } }, 404, (_, __, acted) => {
+    assert.deepEqual(acted.map((e) => e[0]), ['findPatient']);
+  });
+  await test('Mudar a ficha confirmado: auditado sem o conteúdo', { body: { action: 'update_clinical_profile', confirmed: true, payload: { patientName: 'Ana', field: 'allergies', add: ['amendoim'] } } }, 200, (events, _, acted) => {
+    assert.equal(acted[1][0], 'clinical.updateClinicalProfile');
+    const audit = events.find((e) => e[0] === 'audit')[2];
+    assert.equal(audit.action, 'update_clinical_profile');
+    assert.ok(!JSON.stringify(audit).includes('amendoim') && !JSON.stringify(audit).includes('Ana'));
+  });
+  await test('Preferência confirmada vai para a memória da nutricionista autenticada', { body: { action: 'remember_preference', confirmed: true, payload: { text: 'Prefiro planos com 5 refeições', nutritionistId: 'nutri-B' } } }, 200, (_, __, acted) => {
+    assert.equal(acted[0][0], 'memory.rememberPreference');
+    assert.equal(acted[0][1], 'nutri-A');
+    assert.equal(JSON.stringify(acted[0][2]), JSON.stringify({ text: 'Prefiro planos com 5 refeições' }));
+  });
+  await test('Pendência sem paciente não procura paciente', { body: { action: 'add_followup', confirmed: true, payload: { text: 'Ligar para o laboratório' } } }, 200, (_, __, acted) => {
+    assert.equal(acted[0][0], 'memory.addFollowup');
+    assert.equal(acted[0][2], null);
+  });
+  await test('Buscar nos registros é leitura', { body: { action: 'search_records', payload: { query: 'lactose' } } }, 200, (_, __, acted) => {
+    assert.equal(acted[0][0], 'brain.searchRecords');
+    assert.equal(acted[0][1], 'nutri-A');
+  });
+  await test('Nutrientes de um alimento: leitura sem paciente', { body: { action: 'food_nutrients', payload: { food: 'feijão', group: 'minerais' } } }, 200, (_, __, acted) => {
+    assert.equal(acted[0][0], 'foods.foodNutrients');
+    assert.equal(JSON.stringify(acted[0][1]), JSON.stringify({ food: 'feijão', group: 'minerais' }));
   });
   console.log(reports.join('\n'));
   console.log(`${reports.length} testes de acesso da Ali da nutricionista passaram.`);
